@@ -96,8 +96,8 @@ body.touch .touchui{display:block}
 .title{font-family:var(--display);font-weight:400;font-size:32px;margin:0;color:var(--ink)}
 .field{display:flex;flex-direction:column;gap:8px}
 .lbl{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#6d5a91}
-#heroName{font-family:var(--display);font-size:20px;color:var(--ink);background:#fff;border:3px solid var(--ink);border-radius:14px;padding:8px 12px;width:100%;box-sizing:border-box}
-#heroName:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+#heroName,#netName{font-family:var(--display);font-size:20px;color:var(--ink);background:#fff;border:3px solid var(--ink);border-radius:14px;padding:8px 12px;width:100%;box-sizing:border-box}
+#heroName:focus-visible,#netName:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
 .swatches,.chips{display:flex;flex-wrap:wrap;gap:10px}
 .sw{width:38px;height:38px;border-radius:50%;border:3px solid var(--ink);cursor:pointer;box-shadow:0 3px 0 var(--ink);padding:0}
 .chip{font-family:var(--display);font-size:15px;border:3px solid var(--ink);border-radius:999px;padding:6px 14px;background:#fff;color:var(--ink);cursor:pointer;box-shadow:0 3px 0 var(--ink)}
@@ -224,6 +224,10 @@ body.touch .touchui{display:block}
     <div id="netLobby" hidden>
       <div class="roomcode"><span class="lbl">Sala</span><b id="netRoomCode">—</b><button class="chip" id="netCopy" type="button">Copiar</button><span class="pill netpill" id="netStatus" role="status" hidden>Conectando…</span></div>
       <button class="btn secondary" id="netRetry" hidden>Tentar reconectar</button>
+      <div class="field">
+        <label class="lbl" for="netName">Seu nome</label>
+        <input id="netName" type="text" maxlength="12" autocomplete="off" spellcheck="false">
+      </div>
       <span class="lbl">Jogadores</span>
       <ul class="plist" id="netPlayers"></ul>
       <div id="netHostSettings" hidden>
@@ -1956,6 +1960,7 @@ function showOnlineView() {
   $('netJoin').hidden = !net.ns || !!net.room;
   $('netLobby').hidden = !net.room;
   $('netBack').textContent = net.room ? 'Sair da sala' : 'Voltar';
+  if (document.activeElement !== $('netName')) $('netName').value = look.name;
   if (net.room) renderLobby();
 }
 function renderLobby() {
@@ -2013,6 +2018,13 @@ $('netEnter').addEventListener('click', () => {
   if (code.length < 4) { $('netMsg').textContent = 'Digite o código de 4 a 6 letras que o anfitrião passou.'; return; }
   joinRoom(code, false);
 });
+// rename yourself from the lobby; applyLook() sends the new name to everyone in the room
+$('netName').addEventListener('input', e => {
+  look.name = e.target.value; applyLook();
+  $('heroName').value = look.name;
+  renderLobby();
+});
+$('netName').addEventListener('keydown', e => e.stopPropagation());
 $('netRetry').addEventListener('click', async () => {
   net.rejoining = true; showNetStatus();
   const ok = await joinRoom(net.code, net.creator, true);
