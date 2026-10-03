@@ -103,6 +103,14 @@ body.touch .touchui{display:block}
 .chip{font-family:var(--display);font-size:15px;border:3px solid var(--ink);border-radius:999px;padding:6px 14px;background:#fff;color:var(--ink);cursor:pointer;box-shadow:0 3px 0 var(--ink)}
 .sw[aria-pressed="true"]{outline:4px solid var(--pink);outline-offset:3px}
 .chip[aria-pressed="true"]{background:var(--sun)}
+.champ{display:flex;flex-direction:column;gap:8px;border-top:3px dashed rgba(43,26,74,.25);padding-top:10px}
+.champ .plist li{grid-template-columns:30px 18px 1fr auto}
+.champ .plist .n{font-family:var(--display)}
+.champ .plist .pts{font-family:var(--display);font-variant-numeric:tabular-nums}
+.champ .plist .gain{color:var(--mint);font-size:12px;margin-left:4px;-webkit-text-stroke:0}
+.champ .plist li.lead{background:#fff3c4}
+.prize{margin:0;padding:10px 14px;border:3px solid var(--ink);border-radius:14px;background:var(--sun);font-family:var(--display);font-size:18px;text-align:center}
+.chip:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
 .sw:focus-visible,.chip:focus-visible,.mapcard:focus-visible{outline:4px solid var(--pink);outline-offset:3px}
 .card.wide{max-width:760px}
 .maplist{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
@@ -238,9 +246,22 @@ body.touch .touchui{display:block}
       </div>
       <span class="lbl">Jogadores</span>
       <ul class="plist" id="netPlayers"></ul>
+      <div id="netChampLobby" class="champ" hidden>
+        <span class="lbl" id="netChampTitle">Campeonato</span>
+        <ol class="plist" id="netChampTable"></ol>
+      </div>
       <div id="netHostSettings" hidden>
-        <span class="lbl">Mapa</span>
-        <div class="chips" id="netMapPick"></div>
+        <span class="lbl">Modo</span>
+        <div class="chips" id="netModePick"></div>
+        <div id="netRoundsField" class="field" hidden>
+          <span class="lbl">Rodadas</span>
+          <div class="chips" id="netRoundsPick"></div>
+          <p class="hint">Os mapas são sorteados. Pontos: 1º 10 · 2º 8 · 3º 6 · 4º 5 · 5º 4 · 6º 3 · 7º 2 · 8º 1. Quem vencer ganha um item secreto.</p>
+        </div>
+        <div id="netMapField">
+          <span class="lbl">Mapa</span>
+          <div class="chips" id="netMapPick"></div>
+        </div>
         <div id="netMatchSettings"></div>
       </div>
       <p class="hint" id="netGuestInfo" hidden></p>
@@ -268,6 +289,13 @@ body.touch .touchui{display:block}
       <div class="pill" id="rBest">Recorde —</div>
     </div>
     <ol id="board"></ol>
+    <div id="champBox" class="champ" hidden>
+      <span class="lbl" id="champTitle">Campeonato</span>
+      <ol class="plist" id="champTable"></ol>
+      <p class="hint" id="champInfo" role="status"></p>
+      <p class="prize" id="champPrize" hidden></p>
+      <button class="btn" id="champNext" hidden>Próxima rodada</button>
+    </div>
     <div class="row">
       <button class="btn secondary" id="toMenu">Menu</button>
       <button class="btn secondary" id="again">De novo</button>
@@ -812,6 +840,21 @@ function makeHero(color) {
   const bowMat = mat('#ff2d55');
   add(bow, new THREE.SphereGeometry(0.065, 10, 8), bowMat, 0, 0, 0);
   for (const s of [-1, 1]) { const l = add(bow, new THREE.SphereGeometry(0.12, 12, 10), bowMat, s * 0.14, 0, 0); l.scale.set(1.3, 0.85, 0.5); }
+  // secret: golden trophy (championship prize) with orbiting sparkles
+  const goldMat = new THREE.MeshStandardMaterial({ color: '#ffcc33', roughness: 0.2, metalness: 0.5, emissive: '#7a5200', emissiveIntensity: 0.35, side: THREE.DoubleSide });
+  const trophy = hats.trofeu = new THREE.Group(); trophy.position.y = 0.4; hat.add(trophy);
+  add(trophy, new THREE.CylinderGeometry(0.17, 0.2, 0.06, 20), goldMat, 0, 0, 0);
+  add(trophy, new THREE.CylinderGeometry(0.035, 0.05, 0.14, 10), goldMat, 0, 0.1, 0);
+  add(trophy, new THREE.CylinderGeometry(0.22, 0.09, 0.3, 22, 1, true), goldMat, 0, 0.32, 0);
+  const lip = add(trophy, new THREE.TorusGeometry(0.22, 0.025, 8, 24), goldMat, 0, 0.47, 0); lip.rotation.x = Math.PI / 2;
+  for (const s of [-1, 1]) { const hd = add(trophy, new THREE.TorusGeometry(0.08, 0.02, 6, 14), goldMat, s * 0.22, 0.33, 0); hd.rotation.y = Math.PI / 2; }
+  add(trophy, new THREE.SphereGeometry(0.04, 10, 8), mat('#ff3b5c'), 0, 0.32, -0.16);
+  const sparkles = new THREE.Group(); sparkles.position.y = 0.32; trophy.add(sparkles);
+  for (let i = 0; i < 3; i++) {
+    const a = i / 3 * Math.PI * 2;
+    const sp = new THREE.Mesh(new THREE.OctahedronGeometry(0.045), new THREE.MeshBasicMaterial({ color: '#fff3a6' }));
+    sp.position.set(Math.cos(a) * 0.38, Math.sin(a * 2) * 0.08, Math.sin(a) * 0.38); sparkles.add(sp);
+  }
   // mitts and sneakers
   const armL = add(body, new THREE.SphereGeometry(0.15, 12, 10), mat('#ffffff'), -0.54, 0.75, 0);
   const armR = add(body, new THREE.SphereGeometry(0.15, 12, 10), mat('#ffffff'), 0.54, 0.75, 0);
@@ -837,6 +880,20 @@ function makeHero(color) {
   faces.stache = new THREE.Group(); body.add(faces.stache);
   for (const s of [-1, 1]) { const m2 = add(faces.stache, new THREE.SphereGeometry(0.08, 12, 8), ink, s * 0.075, 1.075, -0.44); m2.scale.set(1.5, 0.55, 0.4); m2.rotation.z = s * 0.35; }
   // buck teeth
+  // secret: star eyes
+  faces.stars = new THREE.Group(); body.add(faces.stars);
+  const starShape = (ro, ri) => {
+    const sh = new THREE.Shape();
+    for (let i = 0; i < 10; i++) { const a = Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? ri : ro; i ? sh.lineTo(Math.cos(a) * r, Math.sin(a) * r) : sh.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+    return sh;
+  };
+  const starMat = new THREE.MeshStandardMaterial({ color: '#ffd23f', emissive: '#a06a00', emissiveIntensity: 0.5, side: THREE.DoubleSide });
+  for (const s of [-1, 1]) {
+    const g3 = new THREE.Group(); g3.position.set(s * 0.15, 1.24, -0.445); faces.stars.add(g3);
+    const back = new THREE.Mesh(new THREE.ShapeGeometry(starShape(0.15, 0.07)), new THREE.MeshBasicMaterial({ color: '#2b1a4a', side: THREE.DoubleSide }));
+    back.position.z = 0.004; g3.add(back);
+    g3.add(new THREE.Mesh(new THREE.ShapeGeometry(starShape(0.12, 0.055)), starMat));
+  }
   faces.teeth = new THREE.Group(); body.add(faces.teeth);
   for (const s of [-1, 1]) add(faces.teeth, new THREE.BoxGeometry(0.05, 0.065, 0.02), mat('#ffffff'), s * 0.028, 0.905, -0.452);
 
@@ -862,6 +919,15 @@ function makeHero(color) {
   const cape = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 1.0, 4, 6), clothMat('#e0283c'));
   cape.position.y = -0.5; cape.castShadow = true; capeG.add(cape);
   for (const s of [-1, 1]) add(capeG, new THREE.SphereGeometry(0.05, 8, 6), mat(C.yellow), s * 0.3, 0, -0.62);
+  // secret: royal robe, a longer purple cape with an ermine collar
+  const robeG = outfits.manto = new THREE.Group(); robeG.position.set(0, 1.12, 0.4); body.add(robeG);
+  const robe = new THREE.Mesh(new THREE.PlaneGeometry(0.98, 1.12, 4, 6), clothMat('#6a2cc0'));
+  robe.position.y = -0.56; robe.castShadow = true; robeG.add(robe);
+  const hem = add(robeG, new THREE.BoxGeometry(0.98, 0.07, 0.03), mat('#ffcc33'), 0, -1.1, 0);
+  hem.castShadow = false;
+  const ermine = new THREE.Group(); body.add(ermine); robeG.userData.collar = ermine;
+  const fur = add(ermine, new THREE.TorusGeometry(0.46, 0.075, 10, 32), mat('#ffffff'), 0, 1.02, 0); fur.rotation.x = Math.PI / 2;
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; add(ermine, new THREE.SphereGeometry(0.025, 6, 5), ink, Math.cos(a) * 0.46, 1.06, Math.sin(a) * 0.46); }
   // collar and tie
   const tie = outfits.gravata = new THREE.Group(); body.add(tie);
   const collar = add(tie, new THREE.TorusGeometry(0.452, 0.035, 6, 32), mat('#ffffff'), 0, 1.0, 0); collar.rotation.x = Math.PI / 2;
@@ -882,7 +948,7 @@ function makeHero(color) {
   const fl = outfits.boia = new THREE.Group(); fl.position.y = 0.55; body.add(fl);
   for (let i = 0; i < 4; i++) { const seg = add(fl, new THREE.TorusGeometry(0.55, 0.16, 10, 12, Math.PI / 2), mat(i % 2 ? '#ff3b5c' : '#ffffff'), 0, 0, 0); seg.rotation.set(Math.PI / 2, 0, i * Math.PI / 2); }
 
-  return { root, body, armL, armR, marker: null, face: { eyes, cyclops, faces, brows, smile, mouthO, belly, hat, hats, outfits, cape: capeG, scarfTail: tailG, faceType: 'normal', propeller, feet, mats: { body: m, belly: bellyMat, shoe: shoeMat } } };
+  return { root, body, armL, armR, marker: null, face: { eyes, cyclops, faces, brows, smile, mouthO, belly, hat, hats, outfits, cape: capeG, robe: robeG, sparkles, scarfTail: tailG, faceType: 'normal', propeller, feet, mats: { body: m, belly: bellyMat, shoe: shoeMat } } };
 }
 const BOT_NAMES =['Pudim', 'Jujuba', 'Paçoca', 'Brigadeiro', 'Pipoca', 'Chiclete', 'Bolinha', 'Quindim', 'Cocada', 'Feijão', 'Goiabinha', 'Sorvete', 'Bombom', 'Tapioca', 'Pirulito', 'Canjica', 'Pamonha', 'Merengue', 'Mousse'];
 const BOT_COLORS = ['#ff8a3d', '#3fe0b5', '#9b6bff', '#4db8ff', '#c08bff', '#b6e34a', '#ffa8d9', '#ffd23f', '#7c5cff', '#33c4c4', '#ff6b6b', '#ffb347', '#5ee0e0', '#e07bff', '#9ad94a', '#ff9ec7', '#6aa8ff', '#f5d06a', '#c47a5a'];
@@ -1516,6 +1582,7 @@ function showResults() {
   if (player.finished && (best === null || player.finishTime < best)) { best = player.finishTime; saveBest(best); }
   $('rBest').textContent = 'Recorde ' + (best === null ? '—' : fmt(best));
   renderBoard();
+  renderChamp();
   const online = !!net.room;
   for (const id of ['toMenu', 'again', 'nextMap']) $(id).hidden = online;
   $('backLobby').hidden = !online;
@@ -1551,6 +1618,24 @@ const FACES = [['normal', 'Normal'], ['feliz', 'Feliz'], ['oculos', 'Óculos esc
 const COVERS_BELLY = ['camiseta', 'macacao'];
 const look = { name: 'Hélio', color: '#ff6aa8', shoe: '#3a86ff', hat: 'helice', outfit: 'nenhuma', face: 'normal' };
 try { Object.assign(look, JSON.parse(localStorage.getItem('tombo-total-look') || '{}')); } catch (_) {}
+// secret cosmetics: won one at a time, in this order, by winning online championships
+const SECRETS = [['hat', 'trofeu', 'Troféu de ouro'], ['outfit', 'manto', 'Manto real'], ['face', 'estrela', 'Olhos de estrela']];
+HATS.push(['trofeu', 'Troféu de ouro']); OUTFITS.push(['manto', 'Manto real']); FACES.push(['estrela', 'Olhos de estrela']);
+let unlocked = [];
+try { unlocked = JSON.parse(localStorage.getItem('tombo-total-secrets') || '[]'); } catch (_) {}
+if (!Array.isArray(unlocked)) unlocked = [];
+const isLocked = id => SECRETS.some(s => s[1] === id) && !unlocked.includes(id);
+if (isLocked(look.hat)) look.hat = 'helice';
+if (isLocked(look.outfit)) look.outfit = 'nenhuma';
+if (isLocked(look.face)) look.face = 'normal';
+function unlockNextSecret() {
+  const s = SECRETS.find(x => !unlocked.includes(x[1]));
+  if (!s) return null;
+  unlocked.push(s[1]);
+  try { localStorage.setItem('tombo-total-secrets', JSON.stringify(unlocked)); } catch (_) {}
+  refreshPickers();
+  return s;
+}
 let customizing = false, mapsOpen = false;
 // dress any hero mesh (yours, or another online player's) in a look
 function dressHero(c, lk) {
@@ -1561,6 +1646,7 @@ function dressHero(c, lk) {
   for (const k in f.hats) f.hats[k].visible = k === lk.hat;
   for (const k in f.outfits) f.outfits[k].visible = k === lk.outfit;
   f.belly.visible = !COVERS_BELLY.includes(lk.outfit);
+  f.robe.userData.collar.visible = lk.outfit === 'manto';
   applyFace(f, lk.face);
   c.color = lk.color;
 }
@@ -1573,6 +1659,7 @@ function applyFace(f, id) {
   f.faces.glasses.visible = f.faceType === 'oculos';
   f.faces.stache.visible = f.faceType === 'bigode';
   f.faces.teeth.visible = f.faceType === 'dentuco';
+  f.faces.stars.visible = f.faceType === 'estrela';
   f.smile.position.y = f.faceType === 'bigode' ? 0.985 : 1.03;
 }
 function applyLook() {
@@ -1588,6 +1675,10 @@ function pickerButtons(el, items, key, cls) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = cls; b.setAttribute('aria-label', label); b.title = label;
     if (cls === 'sw') b.style.background = value; else b.textContent = label;
+    if (isLocked(value)) {
+      b.disabled = true; b.textContent = '🔒 Secreto';
+      b.setAttribute('aria-label', 'Item secreto, bloqueado'); b.title = 'Vença um campeonato online para desbloquear';
+    } else if (SECRETS.some(s => s[1] === value)) b.textContent = '★ ' + label;
     b.setAttribute('aria-pressed', String(look[key] === value));
     b.addEventListener('click', () => {
       look[key] = value; applyLook();
@@ -1597,11 +1688,14 @@ function pickerButtons(el, items, key, cls) {
     el.appendChild(b);
   }
 }
-pickerButtons($('colorPick'), COLORS, 'color', 'sw');
-pickerButtons($('shoePick'), SHOES, 'shoe', 'sw');
-pickerButtons($('hatPick'), HATS, 'hat', 'chip');
-pickerButtons($('outfitPick'), OUTFITS, 'outfit', 'chip');
-pickerButtons($('facePick'), FACES, 'face', 'chip');
+function refreshPickers() {
+  pickerButtons($('colorPick'), COLORS, 'color', 'sw');
+  pickerButtons($('shoePick'), SHOES, 'shoe', 'sw');
+  pickerButtons($('hatPick'), HATS, 'hat', 'chip');
+  pickerButtons($('outfitPick'), OUTFITS, 'outfit', 'chip');
+  pickerButtons($('facePick'), FACES, 'face', 'chip');
+}
+refreshPickers();
 $('heroName').value = look.name;
 $('heroName').addEventListener('input', e => { look.name = e.target.value; applyLook(); });
 $('heroName').addEventListener('keydown', e => e.stopPropagation());
@@ -1729,6 +1823,9 @@ function animateHero(c, dt, sp) {
   f.cape.rotation.x += (-(flow + Math.sin(t * 13) * 0.07 * Math.min(sp / 4, 1)) - f.cape.rotation.x) * Math.min(1, dt * 10);
   f.scarfTail.rotation.x = -(Math.min(sp / 8, 1) * 0.8) - Math.sin(t * 15) * 0.15 * Math.min(sp / 4, 1);
   f.scarfTail.rotation.z = Math.sin(t * 11) * 0.12 * Math.min(sp / 4, 1);
+  f.robe.rotation.x = f.cape.rotation.x * 0.85;
+  f.sparkles.rotation.y = t * 2.2;
+  f.faces.stars.children.forEach((s, i) => { s.rotation.z = Math.sin(t * 3 + i) * 0.25; s.scale.setScalar((scared ? 1.25 : 1) + Math.sin(t * 6 + i * 2) * 0.06); });
 
   // brows + mouth
   f.brows.forEach((b, i) => {
@@ -1915,6 +2012,7 @@ function updateNet(dt) {
   }
   net.hostPeer = host ? host.peer : null;
   net.isHost = !!(host && host.isMe && host.sameTab);
+  champSync(host);
   // a guest only follows races the host starts after they arrived
   const hc = host && host.presence.cfg;
   if (host && !net.primed) { net.primed = true; net.lastHostEp = hc ? num(hc.ep) : 0; }
@@ -1939,6 +2037,7 @@ function updateNet(dt) {
     animate(g, dt);
   }
   for (const [k, g] of ghosts) if (!seen.has(k)) { scene.remove(g.mesh); g.inRace = false; ghosts.delete(k); }
+  champTick();
 
   // the host's bots, mirrored
   if (puppets.length) {
@@ -1966,7 +2065,7 @@ function updateNet(dt) {
       f: player.finished && inRace ? r2(player.finishTime) : null
     };
     if (net.isHost) {
-      me.pre = { map: currentMap.id, bots: match.bots, limit: match.limit };
+      me.pre = { map: currentMap.id, bots: match.bots, limit: match.limit, mode: net.mode, rounds: net.rounds };
       const bots = inRace && net.cfg ? chars.filter(c => !c.isPlayer) : [];
       me.b = bots.length ? bots.flatMap(c => [r2(c.pos.x), r2(c.pos.y), r2(c.pos.z), r2(c.yaw), r2(c.vel.x), r2(c.vel.z), flagsOf(c)]) : null;
       me.bf = bots.length ? bots.map(c => (c.finished ? r2(c.finishTime) : 0)) : null;
@@ -1977,7 +2076,7 @@ function updateNet(dt) {
     net.uiT = 0.5;
     showNetStatus();
     if (!$('online').hidden) renderLobby();
-    if (state === 'done') renderBoard();
+    if (state === 'done') { renderBoard(); renderChamp(); }
   }
 }
 function beginOnline(cfg) {
@@ -1985,7 +2084,8 @@ function beginOnline(cfg) {
     map: MAPS.some(m => m.id === cfg.map) ? cfg.map : 'parque',
     bots: clamp(num(cfg.bots) | 0, 0, MAX_BOTS),
     limit: cfg.limit === 'auto' ? 'auto' : clamp(num(cfg.limit), 0, 900),
-    ep: num(cfg.ep), seed: num(cfg.seed) | 0, humans: clamp(num(cfg.humans) | 0, 1, 64)
+    ep: num(cfg.ep), seed: num(cfg.seed) | 0, humans: clamp(num(cfg.humans) | 0, 1, 64),
+    champ: num(cfg.champ), round: clamp(num(cfg.round) | 0, 0, 10), rounds: clamp(num(cfg.rounds) | 0, 0, 10)
   };
   if (currentMap.id !== net.cfg.map) { buildMap(net.cfg.map); updateCourseList(); }
   startRace();
@@ -2097,16 +2197,169 @@ function renderLobby() {
       pick.appendChild(b);
     }
     mountSettings($('netMatchSettings'), () => { resetRace(); showcaseHero(); });
+    const chipRow = (el, items, get, set) => {
+      el.innerHTML = '';
+      for (const [v, label] of items) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'chip'; b.textContent = label;
+        b.setAttribute('aria-pressed', String(get() === v));
+        b.addEventListener('click', () => { set(v); el.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); renderLobby(); });
+        el.appendChild(b);
+      }
+    };
+    chipRow($('netModePick'), [['avulsa', 'Corrida avulsa'], ['camp', 'Campeonato']], () => net.mode, v => { net.mode = v; });
+    chipRow($('netRoundsPick'), [[3, '3 rodadas'], [5, '5 rodadas']], () => net.rounds, v => { net.rounds = v; });
+  }
+  // championship table, for everyone in the room
+  const ch = net.champ;
+  $('netChampLobby').hidden = !ch;
+  if (ch) {
+    const w = champFinal(ch) && ch.champion && ch.scores[ch.champion];
+    $('netChampTitle').textContent = champFinal(ch) ? (w ? `Último campeonato · campeão: ${w.n}` : 'Último campeonato') : `Campeonato · rodada ${ch.round} de ${ch.rounds}`;
+    renderChampTable($('netChampTable'), ch);
+  }
+  if (net.isHost) {
+    const camp = net.mode === 'camp', cont = ch && !champFinal(ch) && ch.decided >= ch.round;
+    $('netRoundsField').hidden = !camp;
+    $('netMapField').hidden = camp;
+    $('netStart').textContent = cont ? `Próxima rodada (${ch.round + 1} de ${ch.rounds})` : camp ? 'Começar campeonato' : 'Começar corrida';
   }
   if (!net.isHost) {
     const hp = peers.find(pr => pr.peer === net.hostPeer);
     const pre = hp && hp.presence.pre;
     const M = pre && MAPS.find(m => m.id === pre.map);
-    let text = M ? `Mapa: ${M.name} · ${botsLabel(clamp(num(pre.bots) | 0, 0, MAX_BOTS))} · ${limitLabel(pre.limit === 'auto' ? 'auto' : num(pre.limit))}. Aguardando o anfitrião começar.` : 'Aguardando o anfitrião…';
+    const rest = pre ? `${botsLabel(clamp(num(pre.bots) | 0, 0, MAX_BOTS))} · ${limitLabel(pre.limit === 'auto' ? 'auto' : num(pre.limit))}` : '';
+    let text = !pre ? 'Aguardando o anfitrião…'
+      : pre.mode === 'camp' ? `Campeonato de ${clamp(num(pre.rounds) | 0, 1, 10)} rodadas com mapas sorteados · ${rest}. Aguardando o anfitrião começar.`
+      : M ? `Mapa: ${M.name} · ${rest}. Aguardando o anfitrião começar.` : 'Aguardando o anfitrião…';
     if (hp && hp.presence.st === 'race') text = 'Tem uma corrida em andamento. Você entra na próxima.';
     $('netGuestInfo').textContent = text;
   }
 }
+// ---------- championship (online) ----------
+// The host owns the championship: it scores each round from finish times and publishes the
+// table as `champ` in its presence; guests only display it. Points go to players, bots just take places.
+const POINTS = [10, 8, 6, 5, 4, 3, 2, 1];
+Object.assign(net, { mode: 'avulsa', rounds: 3, champ: null, myPeer: null, roundWall: 0, prize: null, prizeFor: 0 });
+const rewardedChamps = new Set();
+try { (JSON.parse(localStorage.getItem('tombo-total-champs') || '[]') || []).forEach(id => rewardedChamps.add(id)); } catch (_) {}
+function champStandings(ch) {
+  return Object.entries(ch.scores || {}).map(([k, s]) => Object.assign({ k }, s))
+    .sort((a, b) => (b.pts - a.pts) || (b.wins - a.wins) || ((a.last || 99) - (b.last || 99)));
+}
+const champFinal = ch => !!ch && ch.decided >= ch.rounds;
+function sanitizeChamp(ch) {
+  if (!ch || typeof ch !== 'object') return null;
+  const scores = {};
+  if (ch.scores && typeof ch.scores === 'object') for (const k of Object.keys(ch.scores).slice(0, 64)) {
+    const s = ch.scores[k] || {};
+    scores[k.slice(0, 64)] = { n: safeName(s.n), c: safeColor(s.c), pts: clamp(num(s.pts) | 0, 0, 999), wins: clamp(num(s.wins) | 0, 0, 99), last: clamp(num(s.last) | 0, 0, 99), gain: clamp(num(s.gain) | 0, 0, 99) };
+  }
+  const rounds = clamp(num(ch.rounds) | 0, 1, 10);
+  return {
+    id: num(ch.id), rounds, round: clamp(num(ch.round) | 0, 1, rounds), decided: clamp(num(ch.decided) | 0, 0, rounds),
+    maps: Array.isArray(ch.maps) ? ch.maps.filter(m => MAPS.some(x => x.id === m)).slice(0, 10) : [],
+    scores, champion: typeof ch.champion === 'string' ? ch.champion.slice(0, 64) : null
+  };
+}
+function lobbyHumans() { return 1 + net.room.peers().filter(pr => !(pr.isMe && pr.sameTab) && pr.presence && pr.presence.n).length; }
+function startChampionship() {
+  const ids = MAPS.map(m => m.id), rnd = mulberry32(Date.now() & 0x7fffffff);
+  for (let i = ids.length - 1; i > 0; i--) { const j = rnd() * (i + 1) | 0; [ids[i], ids[j]] = [ids[j], ids[i]]; }
+  const maps = [];
+  for (let i = 0; i < net.rounds; i++) maps.push(ids[i % ids.length]);
+  net.champ = { id: Date.now(), rounds: net.rounds, round: 1, decided: 0, maps, scores: {}, champion: null };
+  startChampRound();
+}
+function startChampRound() {
+  const ch = net.champ;
+  const cfg = { map: ch.maps[ch.round - 1], bots: match.bots, limit: match.limit, ep: Date.now(), seed: Math.random() * 2147483647 | 0, humans: lobbyHumans(), champ: ch.id, round: ch.round, rounds: ch.rounds };
+  net.lastHostEp = cfg.ep; net.roundWall = Date.now();
+  net.room.presence({ cfg, champ: ch }).catch(() => {});
+  beginOnline(cfg);
+}
+// host: the round is decided once the qualifying places are full, every player finished, or time ran out
+function champTick() {
+  const ch = net.champ;
+  if (!net.isHost || !ch || !net.cfg || net.cfg.champ !== ch.id || ch.decided >= ch.round || state === 'menu' || state === 'countdown') return;
+  const lim = raceLimit(), elapsed = (Date.now() - net.roundWall) / 1000 - 3;
+  const humans = [player].concat([...ghosts.values()].filter(g => g.inRace));
+  // "everyone finished" only counts once all players from the start line showed up (or 10 s passed)
+  const allHere = humans.length >= net.cfg.humans || elapsed > 10;
+  if (finishOrder.length >= QUAL || (allHere && humans.every(h => h.finished)) || (lim && elapsed >= lim + 1.5)) scoreRound();
+}
+function scoreRound() {
+  const ch = net.champ;
+  const ranking = finishOrder.filter(c => c.finished).sort((a, b) => a.finishTime - b.finishTime);
+  const humans = [[net.myPeer, player]];
+  for (const [k, g] of ghosts) if (g.inRace) humans.push([k, g]);
+  for (const k in ch.scores) { ch.scores[k].gain = 0; ch.scores[k].last = 0; }
+  for (const [k, c] of humans) {
+    if (!k) continue;
+    const i = ranking.indexOf(c), place = i >= 0 && i < QUAL ? i + 1 : 0;
+    const gain = place ? (POINTS[place - 1] || 1) : 0;
+    const s = ch.scores[k] || { pts: 0, wins: 0 };
+    ch.scores[k] = { n: c.name, c: c.color, pts: s.pts + gain, wins: s.wins + (place === 1 ? 1 : 0), last: place, gain };
+  }
+  ch.decided = ch.round;
+  if (champFinal(ch)) { const top = champStandings(ch)[0]; ch.champion = top && top.pts > 0 ? top.k : null; }
+  net.room.presence({ champ: ch }).catch(() => {});
+}
+// everyone: keep the host's table, and claim the secret item if you are the champion
+function champSync(host) {
+  for (const pr of net.room.peers()) if (pr.isMe && pr.sameTab) net.myPeer = pr.peer;
+  if (!net.isHost) net.champ = host && host.presence.champ ? sanitizeChamp(host.presence.champ) : null;
+  const ch = net.champ;
+  if (ch && champFinal(ch) && ch.champion && ch.champion === net.myPeer && !rewardedChamps.has(ch.id)) {
+    rewardedChamps.add(ch.id);
+    try { localStorage.setItem('tombo-total-champs', JSON.stringify([...rewardedChamps].slice(-50))); } catch (_) {}
+    const s = unlockNextSecret();
+    net.prize = s ? s[2] : 'all'; net.prizeFor = ch.id;
+    big('CAMPEÃO!', 2200); sfx.win();
+  }
+}
+function renderChampTable(ol, ch) {
+  ol.innerHTML = '';
+  const showGain = ch.decided >= ch.round;
+  champStandings(ch).forEach((s, i) => {
+    const li = document.createElement('li');
+    if (s.k === net.myPeer) li.className = 'me'; else if (i === 0 && s.pts > 0) li.className = 'lead';
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = ord(i + 1);
+    const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = s.c;
+    const nm = document.createElement('span'); nm.textContent = s.n + (champFinal(ch) && s.k === ch.champion ? ' 🏆' : '');
+    const pts = document.createElement('span'); pts.className = 'pts'; pts.textContent = s.pts + ' pts';
+    if (showGain && s.gain) { const g = document.createElement('span'); g.className = 'gain'; g.textContent = '+' + s.gain; pts.appendChild(g); }
+    li.append(n, dot, nm, pts);
+    ol.appendChild(li);
+  });
+  if (!ol.children.length) { const li = document.createElement('li'); li.textContent = 'Ninguém pontuou ainda.'; ol.appendChild(li); }
+}
+function renderChamp() {
+  const ch = net.room && net.champ;
+  const inChamp = !!(ch && net.cfg && net.cfg.champ === ch.id);
+  $('champBox').hidden = !inChamp;
+  if (!inChamp) return;
+  const decided = ch.decided >= ch.round, final = champFinal(ch);
+  $('champTitle').textContent = final ? 'Campeonato encerrado' : `Campeonato · rodada ${ch.round} de ${ch.rounds}`;
+  renderChampTable($('champTable'), ch);
+  let info;
+  if (!decided) info = 'Aguardando todos terminarem a rodada…';
+  else if (final) { const w = ch.champion && ch.scores[ch.champion]; info = w ? `${w.n} é o campeão!` : 'Ninguém marcou pontos. Sem campeão desta vez.'; }
+  else info = net.isHost ? 'Rodada encerrada. Comece a próxima quando todos estiverem prontos.' : 'Rodada encerrada. Aguardando o anfitrião começar a próxima.';
+  $('champInfo').textContent = info;
+  $('champNext').hidden = !(net.isHost && decided && !final);
+  $('champNext').textContent = `Próxima rodada (${Math.min(ch.round + 1, ch.rounds)} de ${ch.rounds})`;
+  const prize = final && net.prizeFor === ch.id;
+  $('champPrize').hidden = !prize;
+  if (prize) $('champPrize').textContent = net.prize === 'all' ? '🏆 Você venceu! Você já tem todos os itens secretos.' : `🏆 Você desbloqueou: ${net.prize}! Equipe em Personalizar.`;
+}
+$('champNext').addEventListener('click', () => {
+  const ch = net.champ;
+  if (!net.isHost || !ch || champFinal(ch) || ch.decided < ch.round) return;
+  ch.round++;
+  startChampRound();
+});
+
 $('openOnline').addEventListener('click', () => { $('menu').hidden = true; $('online').hidden = false; showOnlineView(); });
 $('netBack').addEventListener('click', async () => {
   if (net.room) { await leaveRoom(); showOnlineView(); return; }
@@ -2141,7 +2394,10 @@ $('netCopy').addEventListener('click', () => {
   try { navigator.clipboard.writeText(net.code).then(done, () => {}); } catch (_) {}
 });
 $('netStart').addEventListener('click', () => {
-  const humans = 1 + net.room.peers().filter(pr => !(pr.isMe && pr.sameTab) && pr.presence && pr.presence.n).length;
+  const ch = net.champ;
+  if (ch && !champFinal(ch) && ch.decided >= ch.round) { ch.round++; startChampRound(); return; }
+  if (net.mode === 'camp') { startChampionship(); return; }
+  const humans = lobbyHumans();
   const cfg = { map: currentMap.id, bots: match.bots, limit: match.limit, ep: Date.now(), seed: Math.random() * 2147483647 | 0, humans };
   net.lastHostEp = cfg.ep;
   net.room.presence({ cfg }).catch(() => {});

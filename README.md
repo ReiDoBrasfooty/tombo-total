@@ -45,6 +45,12 @@ Funciona quando o jogo é aberto pelo link do artifact no claude.ai (usa a capac
 2. Os outros clicam em **Online**, digitam o código e entram.
 3. O anfitrião escolhe mapa, bots e tempo e clica em **Começar corrida**. A largada é ao mesmo tempo para todos.
 
+### Campeonato
+
+Na sala, o anfitrião pode escolher o modo **Campeonato** (3 ou 5 rodadas, mapas sorteados). Cada rodada dá pontos pela colocação: 1º 10 · 2º 8 · 3º 6 · 4º 5 · 5º 4 · 6º 3 · 7º 2 · 8º 1 (quem não se classifica fica com 0). Os bots ocupam posições, mas o placar é só dos jogadores. Desempate: mais vitórias, depois a melhor colocação na última rodada.
+
+Quem vence o campeonato desbloqueia um item secreto, em ordem: **Troféu de ouro** (chapéu), **Manto real** (roupa) e **Olhos de estrela** (rosto). Até lá eles aparecem como "🔒 Secreto" em Personalizar.
+
 Os bots são simulados pelo anfitrião e espelhados nos outros jogadores. Um indicador mostra o estado da conexão, e o jogo tenta entrar de novo sozinho se a conexão falhar.
 
 Aberto como arquivo local ou fora do claude.ai, o jogo funciona normalmente no modo solo.
