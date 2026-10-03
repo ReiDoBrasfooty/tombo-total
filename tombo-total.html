@@ -188,6 +188,14 @@ body.touch .touchui{display:block}
       <div class="chips" id="hatPick" role="group" aria-labelledby="lblHat"></div>
     </div>
     <div class="field">
+      <span class="lbl" id="lblOutfit">Roupa</span>
+      <div class="chips" id="outfitPick" role="group" aria-labelledby="lblOutfit"></div>
+    </div>
+    <div class="field">
+      <span class="lbl" id="lblFace">Rosto</span>
+      <div class="chips" id="facePick" role="group" aria-labelledby="lblFace"></div>
+    </div>
+    <div class="field">
       <span class="lbl" id="lblShoe">Tênis</span>
       <div class="swatches" id="shoePick" role="group" aria-labelledby="lblShoe"></div>
     </div>
@@ -809,7 +817,72 @@ function makeHero(color) {
   const armR = add(body, new THREE.SphereGeometry(0.15, 12, 10), mat('#ffffff'), 0.54, 0.75, 0);
   const shoeMat = new THREE.MeshStandardMaterial({ color: '#3a86ff', roughness: 0.45 });
   const feet = [-1, 1].map(s => { const f = add(body, new THREE.SphereGeometry(0.16, 12, 10), shoeMat, s * 0.19, 0.07, -0.07); f.scale.set(1, 0.55, 1.45); return f; });
-  return { root, body, armL, armR, marker: null, face: { eyes, brows, smile, mouthO, hat, hats, propeller, feet, mats: { body: m, belly: bellyMat, shoe: shoeMat } } };
+  // ---- extra faces: every variant is built once and toggled by applyFace() ----
+  const faces = {};
+  // one big eye (pupil sits farther out, so it carries its own radius for the pupil math)
+  const cg = new THREE.Group(); cg.position.set(0, 1.25, -0.3); body.add(cg);
+  add(cg, new THREE.SphereGeometry(0.22, 22, 16), mat('#ffffff'), 0, 0, 0);
+  const cp = add(cg, new THREE.SphereGeometry(0.1, 14, 10), ink, 0, 0, -0.15);
+  add(cp, new THREE.SphereGeometry(0.03, 8, 6), mat('#ffffff'), 0.04, 0.04, -0.07);
+  const cyclops = [{ g: cg, pupil: cp, rad: 0.15 }];
+  // happy closed eyes ^ ^
+  faces.arcs = new THREE.Group(); body.add(faces.arcs);
+  for (const s of [-1, 1]) add(faces.arcs, new THREE.TorusGeometry(0.09, 0.026, 6, 14, Math.PI), ink, s * 0.15, 1.2, -0.43);
+  // sunglasses
+  faces.glasses = new THREE.Group(); faces.glasses.position.set(0, 1.24, -0.43); body.add(faces.glasses);
+  for (const s of [-1, 1]) { const l = add(faces.glasses, new THREE.BoxGeometry(0.22, 0.15, 0.05), ink, s * 0.13, 0, 0); l.rotation.y = -s * 0.3; }
+  add(faces.glasses, new THREE.BoxGeometry(0.09, 0.03, 0.03), ink, 0, 0.03, -0.03);
+  for (const s of [-1, 1]) { const g2 = add(faces.glasses, new THREE.BoxGeometry(0.06, 0.03, 0.06), mat('#ffffff'), s * 0.17, 0.035, -0.04); g2.rotation.y = -s * 0.3; }
+  // mustache
+  faces.stache = new THREE.Group(); body.add(faces.stache);
+  for (const s of [-1, 1]) { const m2 = add(faces.stache, new THREE.SphereGeometry(0.08, 12, 8), ink, s * 0.075, 1.075, -0.44); m2.scale.set(1.5, 0.55, 0.4); m2.rotation.z = s * 0.35; }
+  // buck teeth
+  faces.teeth = new THREE.Group(); body.add(faces.teeth);
+  for (const s of [-1, 1]) add(faces.teeth, new THREE.BoxGeometry(0.05, 0.065, 0.02), mat('#ffffff'), s * 0.028, 0.905, -0.452);
+
+  // ---- outfits ----
+  const outfits = {};
+  const clothMat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, side: THREE.DoubleSide });
+  // striped t-shirt
+  const tee = outfits.camiseta = new THREE.Group(); body.add(tee);
+  add(tee, new THREE.CylinderGeometry(0.47, 0.47, 0.42, 28, 1, true), clothMat('#ff3b5c'), 0, 0.78, 0);
+  for (const y of [0.66, 0.78, 0.9]) { const r = add(tee, new THREE.TorusGeometry(0.472, 0.022, 6, 32), mat('#ffffff'), 0, y, 0); r.rotation.x = Math.PI / 2; }
+  // overalls: pants over the lower half, bib, straps and buttons
+  const ov = outfits.macacao = new THREE.Group(); body.add(ov);
+  const denim = clothMat('#3a6ff0');
+  add(ov, new THREE.CylinderGeometry(0.47, 0.47, 0.32, 28, 1, true), denim, 0, 0.61, 0);
+  add(ov, new THREE.SphereGeometry(0.47, 28, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), denim, 0, 0.45, 0);
+  add(ov, new THREE.BoxGeometry(0.4, 0.26, 0.04), denim, 0, 0.88, -0.45);
+  for (const s of [-1, 1]) {
+    add(ov, new THREE.BoxGeometry(0.06, 0.24, 0.03), denim, s * 0.16, 1.09, -0.42);
+    add(ov, new THREE.SphereGeometry(0.035, 8, 6), mat(C.yellow), s * 0.14, 0.97, -0.475);
+  }
+  // superhero cape, hinged at the neck so it can flap
+  const capeG = outfits.capa = new THREE.Group(); capeG.position.set(0, 1.12, 0.4); body.add(capeG);
+  const cape = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 1.0, 4, 6), clothMat('#e0283c'));
+  cape.position.y = -0.5; cape.castShadow = true; capeG.add(cape);
+  for (const s of [-1, 1]) add(capeG, new THREE.SphereGeometry(0.05, 8, 6), mat(C.yellow), s * 0.3, 0, -0.62);
+  // collar and tie
+  const tie = outfits.gravata = new THREE.Group(); body.add(tie);
+  const collar = add(tie, new THREE.TorusGeometry(0.452, 0.035, 6, 32), mat('#ffffff'), 0, 1.0, 0); collar.rotation.x = Math.PI / 2;
+  add(tie, new THREE.BoxGeometry(0.08, 0.07, 0.04), mat('#e0283c'), 0, 0.96, -0.46);
+  const blade = add(tie, new THREE.ConeGeometry(0.07, 0.34, 4), mat('#e0283c'), 0, 0.76, -0.465); blade.rotation.set(Math.PI, Math.PI / 4, 0); blade.scale.z = 0.35;
+  // scarf with a flapping tail
+  const sc = outfits.cachecol = new THREE.Group(); body.add(sc);
+  const scarfMat = mat('#2fd9a9');
+  const ring = add(sc, new THREE.TorusGeometry(0.46, 0.085, 10, 32), scarfMat, 0, 1.0, 0); ring.rotation.x = Math.PI / 2;
+  const tailG = new THREE.Group(); tailG.position.set(0.2, 0.98, 0.4); sc.add(tailG);
+  add(tailG, new THREE.BoxGeometry(0.15, 0.4, 0.05), scarfMat, 0, -0.2, 0);
+  for (const y of [-0.12, -0.28]) add(tailG, new THREE.BoxGeometry(0.152, 0.04, 0.052), mat('#ffffff'), 0, y, 0);
+  // ballet tutu
+  const tutu = outfits.tutu = new THREE.Group(); body.add(tutu);
+  add(tutu, new THREE.CylinderGeometry(0.72, 0.47, 0.14, 28, 1, true), clothMat('#ff9ecb'), 0, 0.6, 0);
+  add(tutu, new THREE.CylinderGeometry(0.64, 0.47, 0.12, 28, 1, true), clothMat('#ffc8e2'), 0, 0.66, 0);
+  // pool float
+  const fl = outfits.boia = new THREE.Group(); fl.position.y = 0.55; body.add(fl);
+  for (let i = 0; i < 4; i++) { const seg = add(fl, new THREE.TorusGeometry(0.55, 0.16, 10, 12, Math.PI / 2), mat(i % 2 ? '#ff3b5c' : '#ffffff'), 0, 0, 0); seg.rotation.set(Math.PI / 2, 0, i * Math.PI / 2); }
+
+  return { root, body, armL, armR, marker: null, face: { eyes, cyclops, faces, brows, smile, mouthO, belly, hat, hats, outfits, cape: capeG, scarfTail: tailG, faceType: 'normal', propeller, feet, mats: { body: m, belly: bellyMat, shoe: shoeMat } } };
 }
 const BOT_NAMES =['Pudim', 'Jujuba', 'Paçoca', 'Brigadeiro', 'Pipoca', 'Chiclete', 'Bolinha', 'Quindim', 'Cocada', 'Feijão', 'Goiabinha', 'Sorvete', 'Bombom', 'Tapioca', 'Pirulito', 'Canjica', 'Pamonha', 'Merengue', 'Mousse'];
 const BOT_COLORS = ['#ff8a3d', '#3fe0b5', '#9b6bff', '#4db8ff', '#c08bff', '#b6e34a', '#ffa8d9', '#ffd23f', '#7c5cff', '#33c4c4', '#ff6b6b', '#ffb347', '#5ee0e0', '#e07bff', '#9ad94a', '#ff9ec7', '#6aa8ff', '#f5d06a', '#c47a5a'];
@@ -1473,7 +1546,10 @@ $('again').addEventListener('click', startRace);
 const COLORS = [['#ff6aa8', 'Rosa'], ['#ffc93c', 'Amarelo'], ['#4db8ff', 'Azul'], ['#4fd67a', 'Verde'], ['#a77bff', 'Roxo'], ['#ff8a3d', 'Laranja'], ['#ff4d5e', 'Vermelho'], ['#f4eefa', 'Branco']];
 const SHOES = [['#3a86ff', 'Azul'], ['#ff3b5c', 'Vermelho'], ['#2fd9a9', 'Verde'], ['#2b1a4a', 'Preto'], ['#ffd23f', 'Amarelo']];
 const HATS = [['helice', 'Hélice'], ['coroa', 'Coroa'], ['cartola', 'Cartola'], ['laco', 'Laço'], ['nenhum', 'Nenhum']];
-const look = { name: 'Hélio', color: '#ff6aa8', shoe: '#3a86ff', hat: 'helice' };
+const OUTFITS = [['nenhuma', 'Nenhuma'], ['camiseta', 'Camiseta'], ['macacao', 'Macacão'], ['capa', 'Capa de herói'], ['gravata', 'Gravata'], ['cachecol', 'Cachecol'], ['tutu', 'Tutu'], ['boia', 'Boia']];
+const FACES = [['normal', 'Normal'], ['feliz', 'Feliz'], ['oculos', 'Óculos escuros'], ['ciclope', 'Ciclope'], ['sonolento', 'Sonolento'], ['bigode', 'Bigode'], ['dentuco', 'Dentuço']];
+const COVERS_BELLY = ['camiseta', 'macacao'];
+const look = { name: 'Hélio', color: '#ff6aa8', shoe: '#3a86ff', hat: 'helice', outfit: 'nenhuma', face: 'normal' };
 try { Object.assign(look, JSON.parse(localStorage.getItem('tombo-total-look') || '{}')); } catch (_) {}
 let customizing = false, mapsOpen = false;
 // dress any hero mesh (yours, or another online player's) in a look
@@ -1483,11 +1559,25 @@ function dressHero(c, lk) {
   f.mats.belly.color.set(lighter(lk.color, 0.6));
   f.mats.shoe.color.set(lk.shoe);
   for (const k in f.hats) f.hats[k].visible = k === lk.hat;
+  for (const k in f.outfits) f.outfits[k].visible = k === lk.outfit;
+  f.belly.visible = !COVERS_BELLY.includes(lk.outfit);
+  applyFace(f, lk.face);
   c.color = lk.color;
+}
+function applyFace(f, id) {
+  f.faceType = FACES.some(x => x[0] === id) ? id : 'normal';
+  const two = ['normal', 'sonolento', 'bigode', 'dentuco'].includes(f.faceType);
+  f.eyes.forEach(e => { e.g.visible = two; });
+  f.cyclops[0].g.visible = f.faceType === 'ciclope';
+  f.faces.arcs.visible = f.faceType === 'feliz';
+  f.faces.glasses.visible = f.faceType === 'oculos';
+  f.faces.stache.visible = f.faceType === 'bigode';
+  f.faces.teeth.visible = f.faceType === 'dentuco';
+  f.smile.position.y = f.faceType === 'bigode' ? 0.985 : 1.03;
 }
 function applyLook() {
   dressHero(player, look);
-  if (net.room) net.room.presence({ n: (look.name || '').trim() || 'Hélio', c: look.color, h: look.hat, s: look.shoe }).catch(() => {});
+  if (net.room) net.room.presence({ n: (look.name || '').trim() || 'Hélio', c: look.color, h: look.hat, s: look.shoe, o: look.outfit, fc: look.face }).catch(() => {});
   player.name = (look.name || '').trim() || 'Hélio';
   $('nameTag').textContent = player.name;
   try { localStorage.setItem('tombo-total-look', JSON.stringify(look)); } catch (_) {}
@@ -1510,6 +1600,8 @@ function pickerButtons(el, items, key, cls) {
 pickerButtons($('colorPick'), COLORS, 'color', 'sw');
 pickerButtons($('shoePick'), SHOES, 'shoe', 'sw');
 pickerButtons($('hatPick'), HATS, 'hat', 'chip');
+pickerButtons($('outfitPick'), OUTFITS, 'outfit', 'chip');
+pickerButtons($('facePick'), FACES, 'face', 'chip');
 $('heroName').value = look.name;
 $('heroName').addEventListener('input', e => { look.name = e.target.value; applyLook(); });
 $('heroName').addEventListener('keydown', e => e.stopPropagation());
@@ -1616,18 +1708,27 @@ function animateHero(c, dt, sp) {
 
   // blink + googly pupils
   c.blinkT -= dt; if (c.blinkT < -0.12) c.blinkT = rand(1.8, 4.5);
-  const lid = c.blinkT < 0 ? 0.1 : happy ? 0.8 : 1;
+  // sleepy faces keep their lids half shut unless startled
+  const sleepy = f.faceType === 'sonolento' && !scared ? 0.45 : 1;
+  const lid = (c.blinkT < 0 ? 0.1 : happy ? 0.8 : 1) * sleepy;
   const es = scared ? 1.22 : 1;
   let lx = Math.sin(t * 0.7) * 0.045, ly = Math.sin(t * 0.43) * 0.025;
   if (sp > 1) { lx = 0; ly = -0.015; }
   if (scared) { lx = Math.sin(t * 31) * 0.05; ly = Math.cos(t * 27) * 0.03; }
   c.lookX += (lx - c.lookX) * Math.min(1, dt * 12); c.lookY += (ly - c.lookY) * Math.min(1, dt * 12);
-  f.eyes.forEach((e, i) => {
+  (f.faceType === 'ciclope' ? f.cyclops : f.eyes).forEach((e, i) => {
     e.g.scale.set(es, es * lid, es);
-    const px = c.lookX + (i ? -0.008 : 0.008), py = c.lookY;
-    e.pupil.position.set(px, py, -Math.sqrt(Math.max(0.0001, 0.0121 - px * px - py * py)));
+    const rad = e.rad || 0.11;
+    const px = c.lookX * rad / 0.11 + (e.rad ? 0 : i ? -0.008 : 0.008), py = c.lookY * rad / 0.11;
+    e.pupil.position.set(px, py, -Math.sqrt(Math.max(0.0001, rad * rad - px * px - py * py)));
     e.pupil.scale.setScalar(scared ? 0.7 : 1);
   });
+  f.faces.teeth.visible = f.faceType === 'dentuco' && !scared;
+  // cape streams back with speed and in the air; scarf tail flutters
+  const flow = Math.min(sp / 8, 1) * 0.9 + (c.grounded ? 0 : 0.45);
+  f.cape.rotation.x += (-(flow + Math.sin(t * 13) * 0.07 * Math.min(sp / 4, 1)) - f.cape.rotation.x) * Math.min(1, dt * 10);
+  f.scarfTail.rotation.x = -(Math.min(sp / 8, 1) * 0.8) - Math.sin(t * 15) * 0.15 * Math.min(sp / 4, 1);
+  f.scarfTail.rotation.z = Math.sin(t * 11) * 0.12 * Math.min(sp / 4, 1);
 
   // brows + mouth
   f.brows.forEach((b, i) => {
@@ -1775,8 +1876,11 @@ function ghostFor(pr) {
     g.mesh.visible = false;
     ghosts.set(pr.peer, g);
   }
-  const lk = { color: safeColor(p.c), shoe: safeColor(p.s), hat: HAT_IDS.includes(p.h) ? p.h : 'nenhum' };
-  const name = safeName(p.n), key = name + lk.color + lk.shoe + lk.hat;
+  const lk = {
+    color: safeColor(p.c), shoe: safeColor(p.s), hat: HAT_IDS.includes(p.h) ? p.h : 'nenhum',
+    outfit: OUTFITS.some(o => o[0] === p.o) ? p.o : 'nenhuma', face: FACES.some(o => o[0] === p.fc) ? p.fc : 'normal'
+  };
+  const name = safeName(p.n), key = [name, lk.color, lk.shoe, lk.hat, lk.outfit, lk.face].join('|');
   if (key !== g.lookKey) {
     g.lookKey = key; g.name = name; dressHero(g, lk);
     if (g.tag) g.mesh.remove(g.tag);
@@ -1914,7 +2018,7 @@ async function joinRoom(code, creator, rejoin) {
   room.onConnection(up => {
     if (up) { net.everUp = true; net.downSince = 0; } else if (!net.downSince) net.downSince = Date.now();
   }, e => onRoomLost(room, e));
-  await room.presence({ v: 1, n: player.name, c: look.color, h: look.hat, s: look.shoe, j: net.j, host: net.creator || null }).catch(() => {});
+  await room.presence({ v: 1, n: player.name, c: look.color, h: look.hat, s: look.shoe, o: look.outfit, fc: look.face, j: net.j, host: net.creator || null }).catch(() => {});
   msg('');
   showOnlineView();
   return true;

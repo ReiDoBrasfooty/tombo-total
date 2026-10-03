@@ -35,7 +35,7 @@ No menu, em "Partida": número de bots (0 a 19) e tempo limite (do mapa, de 1 a 
 
 ## Personalização
 
-No menu, em "Personalizar": nome, cor, chapéu (hélice, coroa, cartola, laço ou nenhum) e cor do tênis. Escolhas, mapa, partida e recordes ficam salvos no navegador.
+No menu, em "Personalizar": nome, cor, chapéu (hélice, coroa, cartola, laço ou nenhum), roupa (camiseta, macacão, capa de herói, gravata, cachecol, tutu ou boia), rosto (normal, feliz, óculos escuros, ciclope, sonolento, bigode ou dentuço) e cor do tênis. No modo online, os outros jogadores veem a sua aparência. Escolhas, mapa, partida e recordes ficam salvos no navegador.
 
 ## Modo online
 
