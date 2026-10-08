@@ -412,22 +412,23 @@ function addSweeper(x, z, top, R, w, color) {
   course.add(g);
   sweepers.push({ x, z, y: top + 0.55, L, r, a: Math.random() * 6, w, mesh: g });
 }
-function addMover(z, top, color, amp, speed, ph) {
-  const b = addBox(0, top, z, 4.4, 1.2, 4.4, color);
-  b.move = { amp, w: speed, ph };
+function addMover(z, top, color, amp, speed, ph, cx) {
+  const b = addBox(cx || 0, top, z, 4.4, 1.2, 4.4, color);
+  b.move = { amp, w: speed, ph, cx: cx || 0 };
   movers.push(b);
 }
-function addPendulum(z, top, i, frameColor) {
+function addPendulum(z, top, i, frameColor, x) {
   const L = 8, R = 1.3, py = top + 9.5;
-  decor(new THREE.BoxGeometry(17, 0.6, 0.6), frameColor, 0, py, z);
-  decor(new THREE.CylinderGeometry(0.35, 0.35, 18, 10), frameColor, -8.5, py - 9, z);
-  decor(new THREE.CylinderGeometry(0.35, 0.35, 18, 10), frameColor, 8.5, py - 9, z);
-  const g = new THREE.Group(); g.position.set(0, py, z);
+  x = x || 0;
+  decor(new THREE.BoxGeometry(17, 0.6, 0.6), frameColor, x, py, z);
+  decor(new THREE.CylinderGeometry(0.35, 0.35, 18, 10), frameColor, x - 8.5, py - 9, z);
+  decor(new THREE.CylinderGeometry(0.35, 0.35, 18, 10), frameColor, x + 8.5, py - 9, z);
+  const g = new THREE.Group(); g.position.set(x, py, z);
   const rod = shadowy(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, L, 8), mat('#5b4a7a'))); rod.position.y = -L / 2; g.add(rod);
   const ball = shadowy(new THREE.Mesh(new THREE.SphereGeometry(R, 24, 18), mat(C.orange))); ball.position.y = -L; g.add(ball);
   const band = new THREE.Mesh(new THREE.TorusGeometry(R, 0.14, 8, 24), mat('#ffffff')); band.position.y = -L; band.rotation.y = Math.PI / 2; g.add(band);
   course.add(g);
-  pendulums.push({ x: 0, py, z, L, R, amp: 1.05, w: 1.9 + i * 0.08, ph: i * 1.6, theta: 0, bx: 0, by: 0, vx: 0, mesh: g });
+  pendulums.push({ x, py, z, L, R, amp: 1.05, w: 1.9 + i * 0.08, ph: i * 1.6, theta: 0, bx: 0, by: 0, vx: 0, mesh: g });
 }
 function addTiles(zStart, rows, top) {
   for (let r = 0; r < rows; r++) for (let c = 0; c < 5; c++) {
@@ -510,13 +511,14 @@ function addBelt(x, top, z, w, d, vx, vz) {
   return b;
 }
 // piston that bursts out of the side of a lane (half-width `half`) and shoves beans into the goo
-function addPuncher(z, top, side, P, ph, half) {
+function addPuncher(z, top, side, P, ph, half, cx) {
   const len = 6.6;
-  const rest = side * (half + 0.9 + len / 2), out = side * (-half + 0.6 + len / 2);
+  cx = cx || 0;
+  const rest = cx + side * (half + 0.9 + len / 2), out = cx + side * (-half + 0.6 + len / 2);
   const b = addBox(rest, top + 1.8, z, len, 1.8, 2.2, '#ffd23f', { ownMat: true, noTrim: true });
   const face = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.9, 2.3), mat('#ff3b8a'));
   face.position.x = -side * (len / 2 + 0.1); face.castShadow = true; b.mesh.add(face);
-  decor(new THREE.BoxGeometry(1.2, 2.8, 3), '#5b4a7a', side * (Math.abs(rest) + len / 2 + 0.6), top + 0.9, z);
+  decor(new THREE.BoxGeometry(1.2, 2.8, 3), '#5b4a7a', rest + side * (len / 2 + 0.6), top + 0.9, z);
   b.punch = { side, rest, out, P, ph, base: new THREE.Color('#ffd23f') };
   punchers.push(b);
   return b;
@@ -531,6 +533,25 @@ function addBlinker(x, top, z, w, d, color, P, ph) {
   b.blink = { P, ph, base: new THREE.Color(color) };
   blinkers.push(b);
   return b;
+}
+// smooth centre line for curves: x eases between [z, x] control points (z descending)
+function pathFn(pts) {
+  return z => {
+    if (z >= pts[0][0]) return pts[0][1];
+    for (let i = 1; i < pts.length; i++) if (z >= pts[i][0]) {
+      const [z0, x0] = pts[i - 1], [z1, x1] = pts[i], u = (z0 - z) / (z0 - z1);
+      return x0 + (x1 - x0) * u * u * (3 - 2 * u);
+    }
+    return pts[pts.length - 1][1];
+  };
+}
+// curved road: short slabs laid along x = f(z) from zFrom to zTo; bots steer along `road`
+function addRoad(zFrom, zTo, top, w, f, c1, c2) {
+  const n = Math.max(1, Math.round((zFrom - zTo) / 1.2)), dz = (zFrom - zTo) / n;
+  for (let i = 0; i < n; i++) {
+    const zc = zFrom - (i + 0.5) * dz;
+    addBox(f(zc), top, zc, w, top > 0.5 ? 1.2 : 2, dz + 0.02, (i >> 1) % 2 ? c2 : c1, { road: f });
+  }
 }
 function buildStart(th) {
   addBox(0, 0, -4, 18, 2, 20, th.start);
@@ -706,6 +727,104 @@ const MAPS = [
       addBox(0, 0, -162.3, 6, 2, 3, C.yellow);
       addSweeper(0, -174.8, 0, 11, 1.6, C.purple);
       return buildFinish(-185.3, 0, th);
+    }
+  },
+  {
+    id: 'serpente', limit: 180, name: 'Serpente Doce', tag: 'Longo', desc: 'Percurso longo e cheio de curvas: pêndulos na curva, zigue-zague de plataformas, varredor, ponte em S e socadores.',
+    theme: { sky: '#a6f0d0', fog: '#d8fff0', slime: '#ff9f45', slimeEm: '#7a3a00', start: '#ffe066', wall: '#2ec4a0', arch: C.pink, archTop: C.yellow },
+    cps: [{ z: 2, w: 6 }, { z: -65, w: 4 }, { z: -102, w: 4 }, { z: -143.75, x: -8, w: 2 }, { z: -196, w: 4 }, { z: -248, w: 4 }],
+    sections: [[-14, 'Largada'], [-62, 'Curva dos Pêndulos'], [-99, 'Zigue-Zague'], [-141, 'Varredor na Curva'], [-192.5, 'Ponte em S'], [-244, 'Avalanche de Bolas'], [-282, 'Curva dos Socadores'], [-300, 'Piso que Cai'], [-1e9, 'Reta Final']],
+    build(th) {
+      const s1 = pathFn([[-16, 0], [-39, 8], [-62, 0]]);
+      addRoad(-14, -62, 0, 6, s1, '#ffe066', '#ffd1e8');
+      [-28, -39, -50].forEach((z, i) => addPendulum(z, 0, i, '#2ec4a0', s1(z)));
+      addBox(0, 0, -65, 12, 2, 6, C.yellow);
+      [-71.3, -77.3, -83.3, -89.3, -95.3].forEach((z, i) => addMover(z, 0, i % 2 ? C.mint : C.pink, 3.4, 1.2 + i * 0.12, i * 1.5, [0, -2, -4, -2, 0][i]));
+      addBox(0, 0, -102, 12, 2, 6, C.yellow);
+      const s2 = pathFn([[-105, 0], [-120, -8]]);
+      addRoad(-105, -121.5, 0, 5, s2, '#ffe066', '#ffd1e8');
+      addSweeper(-8, -131, 0, 10, 1.5, C.purple);
+      addBox(-8, 0, -143.75, 6, 2, 5.5, C.blue);
+      const s3 = pathFn([[-146.5, -8], [-170, 5], [-192.5, 0]]);
+      addRoad(-146.5, -192.5, 0, 3.6, s3, '#ffe066', '#ffd1e8');
+      [-176, -185].forEach((z, i) => addPendulum(z, 0, i + 3, '#2ec4a0', s3(z)));
+      addBox(0, 0, -196, 12, 2, 7, C.yellow);
+      addBox(0, 0, -221.75, 12, 2, 44.5, C.blue);
+      addBallLane(-199.5, -244, 0, '#2ec4a0', C.pink);
+      addBox(0, 0, -248, 12, 2, 8, C.yellow);
+      const s4 = pathFn([[-252, 0], [-267, -7], [-282, 0]]);
+      addRoad(-252, -282, 0, 5, s4, '#ffe066', '#ffd1e8');
+      [-259, -267, -275].forEach((z, i) => addPuncher(z, 0, i % 2 ? -1 : 1, 2.6 + i * 0.15, i * 0.9, 2.5, s4(z)));
+      addTiles(-282, 6, 0);
+      return buildFinish(-300, 0, th);
+    }
+  },
+  {
+    id: 'vulcao', limit: 180, name: 'Vulcão Espiral', tag: 'Difícil', desc: 'Suba o vulcão por curvas fechadas: socadores na curva, escadaria torta, ponte espiral com pêndulos e plataformas que somem.',
+    theme: { sky: '#3a1328', fog: '#5a2034', slime: '#ff5a1f', slimeEm: '#ff3000', start: '#ffcf8a', wall: '#5b2a3a', arch: '#ff7a2f', archTop: C.yellow },
+    cps: [{ z: 2, w: 6 }, { z: -53, w: 4 }, { z: -75, x: 6, w: 3, y: 6 }, { z: -107, x: -3, w: 3, y: 6 }, { z: -122, x: -3, w: 2.5, y: 9 }, { z: -171, x: -2, w: 3, y: 9 }, { z: -202, x: 4, w: 2, y: 9 }, { z: -226.5, x: 4, w: 2, y: 9 }],
+    sections: [[-14, 'Largada'], [-50, 'Curva dos Socadores'], [-71, 'Escadaria Torta'], [-103, 'Plataformas de Lava'], [-127, 'Supertrampolim'], [-167, 'Ponte Espiral'], [-200, 'Plataformas Fantasma'], [-224, 'Varredor do Cume'], [-257, 'Discos de Lava'], [-1e9, 'Reta Final']],
+    build(th) {
+      const s1 = pathFn([[-14, 0], [-32, -8], [-50, 0]]);
+      addRoad(-14, -50, 0, 6, s1, '#ffcf8a', '#ff9a5c');
+      [-24, -32, -40].forEach((z, i) => addPuncher(z, 0, i % 2 ? -1 : 1, 2.6 + i * 0.15, i * 0.9, 3, s1(z)));
+      addBox(0, 0, -53, 12, 2, 6, '#ffcf8a');
+      for (let i = 0; i < 6; i++) addBlock(i * 1.2, i + 1, -57.25 - 2.5 * i, 6, 2.5, i % 2 ? '#ff9a5c' : '#ffcf8a');
+      addBlock(6, 6, -75, 10, 8, '#ffcf8a');
+      [-82.3, -88.3, -94.3, -100.3].forEach((z, i) => addMover(z, 6, i % 2 ? '#ff7a2f' : C.pink, 3.4, 1.4 + i * 0.15, i * 1.4, [6, 3, 0, -3][i]));
+      addBlock(-3, 6, -107, 10, 8, '#ffcf8a');
+      addPad(-3, 6, -112.5, 6, 3, 19);
+      addBlock(-3, 9, -121, 8, 12, '#ff9a5c');
+      const s2 = pathFn([[-127, -3], [-147, 7], [-167, -2]]);
+      addRoad(-127, -167, 9, 3.6, s2, '#ffcf8a', '#ff9a5c');
+      [-139, -150, -160].forEach((z, i) => addPendulum(z, 9, i, '#5b2a3a', s2(z)));
+      addBlock(-2, 9, -171, 10, 8, '#ffcf8a');
+      [-178.5, -184.5, -190.5, -196.5].forEach((z, i) => addBlinker(-2 + i * 2, 9, z, 4.4, 4.4, i % 2 ? '#ff7a2f' : C.pink, 4.2, -i * 1.2));
+      addBlock(4, 9, -202, 6, 4, '#ffcf8a');
+      addSweeper(4, -214, 9, 10, 1.3, '#ff3b5c');
+      addBlock(4, 9, -226.5, 6, 5, '#ffcf8a');
+      addDisc(4, 9, -234, 4.5, 1.6, '#ff7a2f');
+      addDisc(2, 9, -243, 4.5, -1.9, C.pink);
+      addDisc(0, 9, -252, 4.5, 2.2, '#ffcf8a');
+      return buildFinish(-257, 9, th);
+    }
+  },
+  {
+    id: 'maratona', limit: 240, name: 'Maratona Maluca', tag: 'Insano', desc: 'O percurso mais longo de todos: portas, curvas em S com pêndulos, socadores, varredor na curva, chuva de bolas e uma ponte fininha sinuosa.',
+    theme: { sky: '#5ec8e5', fog: '#bfefff', slime: '#ff4f6d', slimeEm: '#7a0a20', start: '#ffe066', wall: '#2b1a4a', arch: C.purple, archTop: C.orange },
+    cps: [{ z: 2, w: 6 }, { z: -40, w: 5 }, { z: -103, w: 4 }, { z: -144, w: 4 }, { z: -185.25, x: -9, w: 2 }, { z: -209.5, x: -9, w: 2 }, { z: -245, w: 4 }, { z: -293, w: 4 }, { z: -353, w: 4 }],
+    sections: [[-14, 'Largada'], [-43, 'Portas Falsas'], [-100, 'Curvas dos Pêndulos'], [-141, 'Socadores'], [-187, 'Curva Fechada'], [-207, 'Varredor'], [-242, 'Plataformas Malucas'], [-290, 'Avalanche de Bolas'], [-350, 'Ponte Fininha'], [-374, 'Piso que Cai'], [-1e9, 'Reta Final']],
+    build(th) {
+      addBox(0, 0, -16.5, 6, 2, 5, C.blue);
+      addBox(0, 0, -31, 16, 2, 24, '#b8f2ff');
+      addBox(-8.3, 3.2, -31, 0.6, 5.2, 24, th.wall, { noTrim: true });
+      addBox(8.3, 3.2, -31, 0.6, 5.2, 24, th.wall, { noTrim: true });
+      addDoorRow(-25, 0, 3, C.mint);
+      addDoorRow(-36, 0, 2, C.orange);
+      const s1 = pathFn([[-43, 0], [-63, 8], [-85, -6], [-100, 0]]);
+      addRoad(-43, -100, 0, 5, s1, '#ffe066', '#b8f2ff');
+      [-55, -68, -80, -92].forEach((z, i) => addPendulum(z, 0, i, '#2b1a4a', s1(z)));
+      addBox(0, 0, -103, 12, 2, 6, C.yellow);
+      addBox(0, 0, -123.5, 6, 2, 35, C.blue);
+      [-114, -120, -126, -132, -138].forEach((z, i) => addPuncher(z, 0, i % 2 ? -1 : 1, 2.5 + i * 0.12, i * 0.9, 3));
+      addBox(0, 0, -144, 12, 2, 6, C.yellow);
+      const s2 = pathFn([[-147, 0], [-167, -9]]);
+      addRoad(-147, -183, 0, 4, s2, '#ffe066', '#b8f2ff');
+      [-171, -178].forEach((z, i) => addPendulum(z, 0, i + 4, '#2b1a4a', -9));
+      addBox(-9, 0, -185.25, 6, 2, 4.5, C.yellow);
+      addSweeper(-9, -197, 0, 10, 1.7, C.purple);
+      addBox(-9, 0, -209.5, 6, 2, 5, C.blue);
+      [-215.2, -221.2, -227.2, -233.2, -239.2].forEach((z, i) => addMover(z, 0, i % 2 ? C.mint : C.pink, 4, 1.25 + i * 0.1, i * 1.2, [-9, -6.5, -4, -1.5, 0][i]));
+      addBox(0, 0, -245, 12, 2, 6, C.yellow);
+      addBox(0, 0, -269, 12, 2, 42, C.blue);
+      addBallLane(-248, -290, 0, C.yellow, '#2b1a4a', [0.35, 0.65]);
+      addBox(0, 0, -293, 12, 2, 6, C.yellow);
+      const s3 = pathFn([[-296, 0], [-316, 8], [-336, -4], [-350, 0]]);
+      addRoad(-296, -350, 0, 3.2, s3, '#ffe066', '#b8f2ff');
+      [-306, -322, -338].forEach((z, i) => addPendulum(z, 0, i + 1, '#2b1a4a', s3(z)));
+      addBox(0, 0, -353, 12, 2, 6, C.yellow);
+      addTiles(-356, 6, 0);
+      return buildFinish(-374, 0, th);
     }
   }
 ];
@@ -987,7 +1106,7 @@ function resetTile(b) {
   b.mesh.material.color.copy(b.tile.base);
 }
 function updateWorld(dt, t) {
-  for (const b of movers) { const nx = b.move.amp * Math.sin(b.move.w * t + b.move.ph); b.dx = nx - b.x; b.x = nx; b.mesh.position.x = nx; }
+  for (const b of movers) { const nx = moverX(b, t); b.dx = nx - b.x; b.x = nx; b.mesh.position.x = nx; }
   for (const d of discs) { d.dAng = d.w * dt; d.ang += d.dAng; d.mesh.rotation.y = d.ang; }
   for (const s of sweepers) { s.a += s.w * dt; s.mesh.rotation.y = -s.a; }
   for (const p of pendulums) {
@@ -1063,8 +1182,9 @@ function updateWorld(dt, t) {
 }
 
 // ---------- physics ----------
+const ROAD_LOOK = 2.6; // how far ahead bots aim along a curved road
 const LAND_T = 0.75; // airtime of a jump that lands at the same height (2 * JUMP / GRAV)
-function moverX(b, t) { return b.move.amp * Math.sin(b.move.w * t + b.move.ph); }
+function moverX(b, t) { return b.move.cx + b.move.amp * Math.sin(b.move.w * t + b.move.ph); }
 function surfaceAt(x, z, y, safe, up) {
   up = up || 0.8; // how far above the feet still counts (a step the bot can hop onto)
   // `safe` (bots planning a jump): ignore blinking platforms about to vanish, and judge
@@ -1233,7 +1353,7 @@ function bumpChars() {
 }
 function respawn(c) {
   const cp = CPS[c.cp];
-  c.pos.set(rand(-cp.w, cp.w), (cp.y || 0) + 1.5, cp.z + rand(-1, 1));
+  c.pos.set((cp.x || 0) + rand(-cp.w, cp.w), (cp.y || 0) + 1.5, cp.z + rand(-1, 1));
   c.vel.set(0, 0, 0); c.stun = 0; c.diving = false; c.prone = 0; c.yaw = 0;
   c.grounded = false; c.ground = null; c.stuckT = 0; c.bestZ = c.pos.z; c.waitT = 0;
   if (c.isPlayer) { sfx.fall(); toast('Tombo! De volta ao checkpoint'); snapCam = true; }
@@ -1257,6 +1377,8 @@ function botThink(c, dt) {
   if (g && c.gtype === 'box') {
     lo = g.x - g.hw + 0.7; hi = g.x + g.hw - 0.7;
     tx = g.move ? g.x : g.hw < 2.5 ? g.x + c.laneU * 0.3 : g.x + c.laneU * Math.max(0, g.hw - 0.9);
+    // curved road: steer at a point on the centre line a little ahead
+    if (g.road) { const rx = g.road(z - ROAD_LOOK); lo = rx - g.hw + 0.7; hi = rx + g.hw - 0.7; tx = rx + c.laneU * Math.max(0, g.hw - 1.4) * 0.6; }
   } else if (g) tx = g.x + c.laneU * Math.max(0, g.R - 1.5) * 0.5;
   for (const b of balls) if (b.z < z && z - b.z < 9 && Math.abs(b.x - x) < 2.4 && Math.abs(b.y - y) < 3) { tx = x + (x > b.x ? 3 : -3); break; }
   // the lane runs into a gap: line up with the nearest platform across it (narrow islands, blinkers)
@@ -1272,7 +1394,7 @@ function botThink(c, dt) {
     if (best) tx = best.x + clamp(tx - best.x, -Math.max(0, best.hw - 0.7), Math.max(0, best.hw - 0.7));
   }
   tx = clamp(tx, lo, hi);
-  let mx = tx - x, mz = -4;
+  let mx = tx - x, mz = g && g.road ? -ROAD_LOOK : -4;
   const l = Math.hypot(mx, mz); mx /= l; mz /= l;
   // lean against conveyor belts so they don't sweep the bot off the side
   if (g && g.conv) {
@@ -1310,21 +1432,25 @@ function botThink(c, dt) {
       if (inDanger || toDanger < cross) { mx = mz = 0; }
     }
   }
-  // where the bot will be at landing time if its own platform is moving
-  const xf = g && g.move ? x + moverX(g, worldT + LAND_T) - g.x : x;
-  if (!surfaceAt(xf, z - 1.4, y, true, 2)) {
+  // where the bot will be at landing time if it leaves a moving platform: the jump keeps the
+  // platform's sideways speed for the whole flight (see the takeoff below)
+  const gv = g && g.move ? g.dx / dt : 0, xf = x + gv * LAND_T;
+  // on a curved road, look for the ground along the bend rather than straight ahead
+  const sl = g && g.road ? (g.road(z - 2) - g.road(z)) / 2 : 0;
+  if (!surfaceAt(xf + sl * 1.4, z - 1.4, y, true, 2)) {
     let landing = false;
-    for (const d of [2.4, 3.4, 4.4, 5.4]) if (surfaceAt(xf, z - d, y, true, 1.6)) { landing = true; break; }
+    for (const d of [2.4, 3.4, 4.4, 5.4]) if (surfaceAt(xf + sl * d, z - d, y, true, 1.6)) { landing = true; break; }
     // moving/blinking platforms ahead will line up eventually: be patient instead of leaping blind
     const patient = boxes.some(b => (b.move || b.blink) && z - b.z > 0 && z - b.z < 9 && b !== g);
     if (landing) {
       inp.jump = true; c.waitT = 0;
-      // the landing was checked straight ahead, so jump straight ahead (any sideways drift
+      // jump exactly the way the landing was checked: straight ahead, or along the bend (any sideways drift
       // comes only from the platform being left, which the landing check already predicted)
-      mx = 0; mz = -1;
+      mx = sl / Math.hypot(sl, 1); mz = -1 / Math.hypot(sl, 1);
       // leaving from a standstill (after waiting at the edge): take off at full running speed,
       // or the weak air control makes the bot fall short of the gap
-      if (mx || mz) { const k = c.speed / Math.hypot(mx, mz); if (Math.hypot(c.vel.x, c.vel.z) < c.speed * 0.7) { c.vel.x = (g && g.dx ? g.dx / dt : 0) + mx * k; c.vel.z = mz * k; } }
+      if (Math.hypot(c.vel.x, c.vel.z) < c.speed * 0.7) { c.vel.x = gv + mx * c.speed; c.vel.z = mz * c.speed; }
+      mx += gv / c.speed; // air steering holds that sideways speed instead of braking it
     }
     else { c.waitT += dt; if (c.waitT > (patient ? 6 : 2.8)) { inp.jump = true; c.waitT = 0; } else {
       // hold at the edge but shuffle sideways onto the line toward the next platform
@@ -1883,6 +2009,12 @@ function updateCamera(dt) {
     return;
   }
   const p = player.pos, py = Math.max(p.y, -4);
+  // on a curved road, swing the camera gently to look along the bend (roads end straight, so it settles back)
+  const pg = player.ground;
+  if (state === 'race' && !camDrag && player.grounded && pg && pg.road) {
+    const want = -Math.atan((pg.road(p.z - 6) - pg.road(p.z)) / 6);
+    camYaw += wrap(want - camYaw) * Math.min(1, dt * 1.5);
+  }
   // countdown intro: start facing Hélio, then swing around behind him for "VAI!"
   let a = state === 'countdown' ? clamp((cdT - 0.3) / 1.6, 0, 1) : 0;
   a = a * a * (3 - 2 * a);
