@@ -20,6 +20,8 @@ No celular aparecem um joystick e botões de pular e mergulhar.
 
 ## Mapas
 
+Cada percurso fica sobre uma piscina de gosma no meio de um estádio, cercado por um cenário temático (árvores e pirulitos, torres, nuvens, chaminés, pinheiros e bonecos de neve, rochas de lava…), colinas, montanhas no horizonte e céu em degradê.
+
 | Mapa | Dificuldade | Limite | Obstáculos |
 | --- | --- | --- | --- |
 | Parque Gelatina | Clássico | 3:00 | Varredor giratório, plataformas dançantes, ponte dos pêndulos, discos, avalanche de bolas e piso que cai |
@@ -48,6 +50,8 @@ Funciona quando o jogo é aberto pelo link do artifact no claude.ai (usa a capac
 ### Campeonato
 
 Na sala, o anfitrião pode escolher o modo **Campeonato** (3 ou 5 rodadas, mapas sorteados). Cada rodada dá pontos pela colocação: 1º 10 · 2º 8 · 3º 6 · 4º 5 · 5º 4 · 6º 3 · 7º 2 · 8º 1 (quem não se classifica fica com 0). Os bots ocupam posições, mas o placar é só dos jogadores. Desempate: mais vitórias, depois a melhor colocação na última rodada.
+
+Nas rodadas do campeonato, arquibancadas com torcida cercam o percurso: o público pula quando o jogador passa, comemora a largada e cada chegada, e faz "ola" de vez em quando.
 
 Quem vence o campeonato desbloqueia um item secreto, em ordem: **Troféu de ouro** (chapéu), **Manto real** (roupa) e **Olhos de estrela** (rosto). Até lá eles aparecem como "🔒 Secreto" em Personalizar.
 
