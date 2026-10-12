@@ -1,0 +1,25 @@
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const source = fs.readFileSync('tombo-total.html','utf8');
+const a = source.indexOf('let personalReplay ='), b = source.indexOf('// ---------- match settings ----------', a);
+const store = new Map(), elements = {};
+const c = { Math, Number, JSON, net: {room:null}, state:'race', raceT:0, currentMap:{id:'parque'}, player:{pos:{x:0,y:1,z:5},yaw:0,finishTime:1,finished:true}, bestKey:()=> 'best', loadBest:()=>1, localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)}, clamp:(x,a,b)=>Math.max(a,Math.min(b,x)), makeBean:()=>({root:{traverse(){},position:{set(...v){this.value=v}},rotation:{}}}), scene:{add(){}}, $:id=>elements[id] ||= {}, MAPS:[{id:'parque'},{id:'torre'},{id:'procedural'}], SECRETS:[['hat','trofeu','Troféu'],['outfit','manto','Manto'],['face','estrela','Estrela']],unlocked:[],refreshPickers(){} };
+vm.createContext(c); vm.runInContext(source.slice(a,b), c);
+vm.runInContext('resetPersonalReplay(); capturePersonalReplay();',c);
+c.raceT=1; c.player.pos.z=1;
+vm.runInContext('capturePersonalReplay(true); savePersonalReplay(); resetPersonalReplay();',c);
+assert(store.has('best-replay-v1'));
+c.raceT=0.5; vm.runInContext('updatePersonalReplay()',c);
+assert.equal(vm.runInContext('replayMesh.visible',c),true);
+assert.equal(vm.runInContext('replayMesh.position.value[2]',c),3);
+c.net.room={}; vm.runInContext('updatePersonalReplay()',c);
+assert.equal(vm.runInContext('replayMesh.visible',c),false);
+c.net.room=null;
+vm.runInContext('updateSoloChallenges()',c); assert(c.unlocked.includes('manto'));
+c.currentMap.id='torre'; vm.runInContext('updateSoloChallenges(); updateSoloChallenges();',c);
+assert.deepEqual(c.unlocked.sort(),['estrela','manto','trofeu']);
+const before=store.get('tombo-total-solo-v1'); c.net.room={}; vm.runInContext('updateSoloChallenges()',c);
+assert.equal(store.get('tombo-total-solo-v1'),before);
+store.set('best-replay-v1', JSON.stringify({time:1,samples:[[0,0,0,0,0],[0,1,1,1,1]]})); c.net.room=null;
+vm.runInContext('resetPersonalReplay()',c); assert.equal(vm.runInContext('personalReplay.length',c),0);
+console.log('OK: replay salvo e interpolado, online isolado, dados inválidos rejeitados e três desafios desbloqueados.');
+

@@ -147,6 +147,7 @@ body.touch .touchui{display:block}
     <div class="pill netpill" id="netHud" role="status" hidden>Conectado</div>
   </div>
 </div>
+<button class="chip" id="pauseButton" hidden style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%)">Pausar</button>
 <div id="big"></div>
 <div id="toast"></div>
 
@@ -174,6 +175,7 @@ body.touch .touchui{display:block}
       <button class="btn secondary" id="openMaps">Mapas</button>
       <button class="btn secondary" id="openMatch">Partida</button>
       <button class="btn secondary" id="openOnline">Online</button>
+      <button class="btn secondary" id="openOptions">Opções</button>
     </div>
     <p class="hint" id="matchSummary">11 bots · tempo do mapa</p>
     <button class="btn" id="play">Jogar</button>
@@ -223,7 +225,7 @@ body.touch .touchui{display:block}
   <div class="card">
     <h2 class="title">Online</h2>
     <div id="netOff" hidden>
-      <p class="tag">O modo online funciona quando o jogo é aberto pelo link do claude.ai. Todos os jogadores precisam estar logados e ter acesso ao link (compartilhe pelo menu "Compartilhar" da página).</p>
+      <p class="tag">Para jogar online por um link comum, abra o jogo pelo servidor Tombo Total. Como arquivo local, o modo solo continua disponível. Salas do Claude também são compatíveis.</p>
     </div>
     <div id="netJoin" hidden>
       <p class="tag">Crie uma sala e passe o código para os amigos, ou digite o código de uma sala.</p>
@@ -275,10 +277,26 @@ body.touch .touchui{display:block}
   <div class="card wide">
     <h2 class="title">Escolha o mapa</h2>
     <div class="maplist" id="mapList"></div>
+    <div id="procControls" hidden>
+      <label for="procSeed">Semente da pista</label>
+      <input id="procSeed" type="number" min="1" max="2147483647" step="1" value="1" style="width:130px;padding:8px">
+      <button class="btn secondary" id="procRepeat">Gerar semente</button>
+      <button class="btn secondary" id="procNew">Nova pista</button>
+      <p class="tag">De novo repete a pista. Nova pista sorteia outra combinação.</p>
+    </div>
     <button class="btn" id="closeMaps">Voltar</button>
   </div>
 </div>
 
+<div class="overlay" id="options" hidden><div class="card">
+<h2 class="title" id="optionsTitle">Opções</h2>
+<label class="field">Volume <input id="volume" type="range" min="0" max="100" value="80"></label>
+<label><input id="muted" type="checkbox"> Silenciar sons</label>
+<label class="field">Sensibilidade da câmera <input id="sensitivity" type="range" min="25" max="200" value="100"></label>
+<label class="field">Qualidade gráfica <select id="quality" class="chip"><option value="low">Leve</option><option value="medium">Média</option><option value="high">Alta</option></select></label>
+<label><input id="shake" type="checkbox"> Tremor de câmera</label>
+<p class="hint">No solo, use Esc ou Pausar para fazer uma pausa.</p>
+<button class="btn" id="closeOptions">Voltar</button></div></div>
 <div class="overlay" id="results" hidden>
   <div class="card">
     <p class="mapname" id="rMap"></p>
@@ -288,6 +306,9 @@ body.touch .touchui{display:block}
       <div class="pill" id="rTime">0:00.00</div>
       <div class="pill" id="rBest">Recorde —</div>
     </div>
+    <p class="hint" id="rDelta" role="status"></p>
+    <p class="hint" id="soloChallenges"></p>
+    <p class="prize" id="soloPrize" hidden></p>
     <ol id="board"></ol>
     <div id="champBox" class="champ" hidden>
       <span class="lbl" id="champTitle">Campeonato</span>
@@ -298,8 +319,9 @@ body.touch .touchui{display:block}
     </div>
     <div class="row">
       <button class="btn secondary" id="toMenu">Menu</button>
-      <button class="btn secondary" id="again">De novo</button>
+      <button class="btn secondary" id="again">Tentar de novo</button>
     </div>
+    <button class="btn secondary" id="newTrack" hidden>Sortear outra pista</button>
     <button class="btn" id="nextMap">Próximo mapa</button>
     <button class="btn" id="backLobby" hidden>Voltar à sala</button>
   </div>
@@ -315,6 +337,9 @@ const wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a
 const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
 const $ = id => document.getElementById(id);
 
+const options = { volume: 80, muted: false, sensitivity: 100, quality: 'high', shake: false };
+try { const v = JSON.parse(localStorage.getItem('tombo-total-options') || '{}'); options.volume = clamp(Number(v.volume ?? 80) || 0, 0, 100); options.sensitivity = clamp(Number(v.sensitivity) || 100, 25, 200); options.muted = v.muted === true; options.shake = v.shake === true; if (['low','medium','high'].includes(v.quality)) options.quality = v.quality; } catch (_) {}
+let paused = false, masterGain = null, shakeT = 0;
 // ---------- renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -372,6 +397,16 @@ function addBox(x, top, z, w, h, d, color, extra) {
 }
 // a platform block that reaches down to y = -2, so raised floors look solid
 function addBlock(x, top, z, w, d, color, extra) { return addBox(x, top, z, w, top + 2, d, color, extra); }
+// Sloped top with matching rendered geometry and collision height.
+function addRamp(zFrom, zTo, yFrom, yTo, w, color) {
+  const depth = zFrom - zTo, slope = (yTo - yFrom) / (zTo - zFrom);
+  const b = addBox(0, (yFrom + yTo) / 2, (zFrom + zTo) / 2, w, 2, depth, color, { noTrim: true, slope });
+  const geo = b.mesh.geometry, pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, pos.getY(i) + slope * pos.getZ(i));
+  pos.needsUpdate = true; geo.computeVertexNormals(); geo.computeBoundingSphere();
+  return b;
+}
+function floorHeight(b, z) { return b.top + (b.slope || 0) * (clamp(z, b.z - b.hd, b.z + b.hd) - b.z); }
 function addDisc(x, top, z, R, w, color, h) {
   h = h || 1.4;
   const g = new THREE.Group();
@@ -576,13 +611,37 @@ function buildFinish(z0, top, th) {
   }
   const banner = new THREE.Mesh(new THREE.BoxGeometry(16.4, 2, 0.8), new THREE.MeshStandardMaterial({ map: checkerTex, roughness: 0.6 }));
   banner.position.set(0, top + 9, fz); banner.castShadow = true; course.add(banner);
-  const line = new THREE.Mesh(new THREE.PlaneGeometry(15, 1.2), new THREE.MeshStandardMaterial({ map: checkerTex, roughness: 0.7 }));
-  line.rotation.x = -Math.PI / 2; line.position.set(0, top + 0.05, fz); line.receiveShadow = true; course.add(line);
+  // The platform trim reaches top + 0.05; keep the finish decal above it.
+  const line = new THREE.Mesh(new THREE.PlaneGeometry(15, 1.2), new THREE.MeshStandardMaterial({ map: checkerTex, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  line.rotation.x = -Math.PI / 2; line.position.set(0, top + 0.07, fz); line.receiveShadow = true; course.add(line);
   return { z: fz, top };
 }
 
 // ---------- maps ----------
 const MAPS = [
+  {
+    id: 'montanha', limit: 180, name: 'Montanha do Tombo', tag: 'Difícil',
+    desc: 'Escadaria com pêndulos, morros com socadores e descidas velozes. Subir exige força; descer exige controle!',
+    theme: { sky: '#92dcff', fog: '#d7f2ff', slime: '#8f6bff', slimeEm: '#442277', start: C.yellow, wall: C.purple, arch: C.orange, archTop: C.mint },
+    cps: [{ z: 2, w: 6 }, { z: -41, w: 3, y: 6 }, { z: -75, w: 3, y: 14 }, { z: -111, w: 3, y: 4 }, { z: -145, w: 3, y: 16 }],
+    sections: [[-14, 'Largada'], [-38, 'Escadaria Pendular'], [-72, 'Morro dos Socadores'], [-108, 'Descida Veloz'], [-142, 'Escalada Final'], [-162, 'Cume Giratório'], [-1e9, 'Chegada no Alto']],
+    build(th) {
+      for (let i = 0; i < 12; i++) addBlock(0, (i + 1) * 0.5, -15 - i * 2, 8, 2, i % 2 ? C.orange : C.yellow, { stairSlope: -0.25 });
+      [-20, -28, -34].forEach((z, i) => addPendulum(z, (Math.abs(z) - 14) * 0.25, i, C.purple));
+      addBlock(0, 6, -41, 10, 6, C.mint);
+      addRamp(-44, -72, 6, 14, 8, C.blue);
+      [-51, -61, -68].forEach((z, i) => addPuncher(z, 6 + (-44 - z) * 8 / 28, i % 2 ? -1 : 1, 3.2, i * 0.8, 4));
+      addBlock(0, 14, -75, 10, 6, C.yellow);
+      addRamp(-78, -108, 14, 4, 7, C.mint);
+      [-88, -100].forEach((z, i) => addPendulum(z, 14 - (-78 - z) / 3, i, C.purple));
+      addBlock(0, 4, -111, 10, 6, C.yellow);
+      addRamp(-114, -142, 4, 16, 6, C.orange);
+      [-122, -132].forEach((z, i) => addPendulum(z, 4 + (-114 - z) * 12 / 28, i + 1, C.purple));
+      addBlock(0, 16, -145, 10, 6, C.mint);
+      addSweeper(0, -155, 16, 8, 1.5, C.purple);
+      return buildFinish(-163, 16, th);
+    }
+  },
   {
     id: 'parque', limit: 180, name: 'Parque Gelatina', tag: 'Clássico', desc: 'O percurso original: varredor, pêndulos, avalanche de bolas e piso que cai.',
     theme: { sky: '#7fd8ff', fog: '#c6ecff', slime: '#ff7ac8', slimeEm: '#7a1d5c', start: C.yellow, wall: C.pink, arch: C.purple, archTop: C.mint },
@@ -828,6 +887,69 @@ const MAPS = [
     }
   }
 ];
+let proceduralSeed = 1;
+try { proceduralSeed = Math.max(1, Number(localStorage.getItem('tombo-total-seed')) | 0); } catch (_) {}
+// Reuse the existing obstacle kit in bounded sections with flat, safe joins.
+function proceduralPlan(seed) {
+  const rnd = mulberry32(seed), pool = ['escadas', 'morro', 'esteiras', 'socadores', 'pendulos', 'portas', 'moveis', 'varredor', 'pisos', 'bolas'];
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return pool.slice(0, 7).map((kind, i) => ({ kind, variant: rnd(), difficulty: 1 + i / 12 }));
+}
+function buildProcedural(th) {
+  const M = MAPS.find(m => m.id === 'procedural'), plan = proceduralPlan(proceduralSeed);
+  const names = { escadas: 'Escadaria Pendular', morro: 'Morro do Tombo', esteiras: 'Esteiras da Fábrica', socadores: 'Corredor dos Socadores', pendulos: 'Ponte dos Pêndulos', portas: 'Portas Traiçoeiras', moveis: 'Plataformas Dançantes', varredor: 'Varredor Giratório', pisos: 'Piso que Cai', bolas: 'Avalanche de Bolas' };
+  M.cps = [{ z: 2, w: 6 }]; M.sections = [[-14, 'Largada']];
+  let z = -14, y = 0;
+  for (const part of plan) {
+    const end = z - 32, k = part.difficulty, v = part.variant, top = y;
+    switch (part.kind) {
+      case 'escadas':
+        for (let i = 0; i < 12; i++) addBlock(0, top + (i + 1) * 0.5, z - 1 - i * 2, 8, 2, i % 2 ? C.orange : C.yellow, { stairSlope: -0.25 });
+        addPendulum(z - 10, top + 2.5, 0, C.purple); addPendulum(z - 20, top + 5, 1, C.purple);
+        y += 6; addBlock(0, y, z - 28, 8, 8, C.mint); break;
+      case 'morro':
+        addRamp(z, z - 16, top, top + 6, 8, C.orange);
+        addRamp(z - 16, end, top + 6, top, 8, C.mint);
+        addPendulum(z - 9, top + 3.375, 0, C.purple); addPendulum(z - 24, top + 3, 1, C.purple); break;
+      case 'esteiras':
+        addBelt(0, top, z - 8, 8, 16, 0, 2 + k);
+        addBelt(0, top, z - 24, 8, 16, (v > 0.5 ? 1 : -1) * 2, 0);
+        addPendulum(z - 22, top, 1, C.purple); break;
+      case 'socadores':
+        addBlock(0, top, z - 16, 8, 32, C.blue);
+        for (let i = 0; i < 4; i++) addPuncher(z - 6 - i * 7, top, i % 2 ? -1 : 1, 3.8 - k * 0.4, i * 0.8, 4); break;
+      case 'pendulos':
+        addBlock(0, top, z - 16, 4.5, 32, C.blue);
+        for (let i = 0; i < 4; i++) addPendulum(z - 5 - i * 7, top, i, C.purple); break;
+      case 'portas':
+        addBlock(0, top, z - 16, 16, 32, C.yellow);
+        for (const x of [-8.3, 8.3]) addBox(x, top + 3, z - 16, 0.6, 5, 32, C.purple, { noTrim: true });
+        addDoorRow(z - 10, top, 2, C.pink); addDoorRow(z - 23, top, 2, C.mint); break;
+      case 'moveis':
+        addBlock(0, top, z - 2, 8, 4, C.yellow);
+        for (let i = 0; i < 4; i++) addMover(z - 7 - i * 6, top, i % 2 ? C.pink : C.mint, 3.5, 1 + k * 0.15, i * 1.4 + v);
+        addBlock(0, top, z - 30, 8, 4, C.yellow); break;
+      case 'varredor':
+        addBlock(0, top, z - 3, 8, 6, C.yellow);
+        addSweeper(0, z - 16, top, 11, 1.1 + k * 0.2, C.purple);
+        sweepers[sweepers.length - 1].a = v * Math.PI * 2;
+        addBlock(0, top, z - 29, 8, 6, C.yellow); break;
+      case 'pisos':
+        addBlock(0, top, z - 1, 12, 2, C.yellow); addTiles(z - 2, 9, top);
+        addBlock(0, top, z - 30.5, 12, 3, C.yellow); break;
+      case 'bolas':
+        addBlock(0, top, z - 16, 12, 32, C.blue);
+        addBallLane(z, end, top, C.yellow, C.pink, [0.65, 1.05]); break;
+    }
+    M.sections.push([end, names[part.kind]]);
+    // Six metres of safe floor separate every pair of challenges.
+    addBlock(0, y, end - 3, 12, 6, C.yellow);
+    M.cps.push({ z: end - 3, w: 3, y }); z = end - 6;
+  }
+  M.sections.push([-1e9, 'Reta Final']); M.limit = 240;
+  return buildFinish(z, y, th);
+}
+MAPS.push({ id: 'procedural', name: 'Pista Infinita', tag: 'Procedural', desc: 'Sete trechos dos mapas existentes em uma nova combinação. Escadas, morros e obstáculos com checkpoints.', limit: 240, theme: MAPS.find(m => m.id === 'parque').theme, cps: [], sections: [[-14, 'Largada'], [-1e9, 'Chegada']], build: buildProcedural });
 let currentMap = MAPS[0], CPS = MAPS[0].cps, SECTIONS = MAPS[0].sections, FINISH = { z: -242, top: 0 };
 const sectionName = z => { for (const [lim, n] of SECTIONS) if (z > lim) return n; return ''; };
 let QUAL = 8; // recomputed per race: two thirds of the field qualify
@@ -849,7 +971,7 @@ function buildMap(id) {
   FINISH = M.build(M.theme);
   currentMap = M; CPS = M.cps; SECTIONS = M.sections;
   buildScenery(M);
-  shuffleDoors();
+  shuffleDoors(M.id === 'procedural' ? mulberry32(proceduralSeed) : null);
 }
 
 // Clouds and floating toys
@@ -1179,7 +1301,7 @@ function setStands(on) {
   if (standsOn && !crowd.murmur) {
     const s = noiseSrc(), f = actx.createBiquadFilter(), g = actx.createGain();
     f.type = 'bandpass'; f.frequency.value = 650; f.Q.value = 0.5; g.gain.value = 0;
-    s.connect(f); f.connect(g); g.connect(actx.destination); s.start();
+    s.connect(f); f.connect(g); g.connect(masterGain); s.start();
     crowd.murmur = { s, g }; crowd.soundT = 0;
   } else if (!standsOn && crowd.murmur) {
     const m = crowd.murmur; crowd.murmur = null;
@@ -1194,7 +1316,7 @@ function cheer(level) {
   const t = actx.currentTime, s = noiseSrc(), f = actx.createBiquadFilter(), g = actx.createGain();
   f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 0.7;
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.08 * level, t + 0.15); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.2);
-  s.connect(f); f.connect(g); g.connect(actx.destination); s.start(t); s.stop(t + 2.3);
+  s.connect(f); f.connect(g); g.connect(masterGain); s.start(t); s.stop(t + 2.3);
   for (let i = 0; i < 4; i++) { const f0 = 500 + Math.random() * 400; tone(f0, f0 * 1.6, 0.35 + Math.random() * 0.3, 'sine', 0.012 * level, Math.random() * 0.6); }
 }
 
@@ -1509,7 +1631,8 @@ function surfaceAt(x, z, y, safe, up) {
   // `safe` (bots planning a jump): ignore blinking platforms about to vanish, and judge
   // moving platforms by where they will be when the bot lands, with a margin
   for (const b of boxes) {
-    if (!b.active || Math.abs(z - b.z) > b.hd || b.top > y + up || b.top < y - 3) continue;
+    const top = floorHeight(b, z);
+    if (!b.active || Math.abs(z - b.z) > b.hd || top > y + up || top < y - 3) continue;
     if (safe && b.blink && blinkLeft(b, worldT) <= 1.2) continue;
     const bx = safe && b.move ? moverX(b, worldT + LAND_T) : b.x, m = safe && b.move ? 0.8 : 0;
     if (Math.abs(x - bx) <= b.hw - m) return true;
@@ -1518,9 +1641,17 @@ function surfaceAt(x, z, y, safe, up) {
   return false;
 }
 function land(c, top, g, type) {
+  if (c.isPlayer && !c.grounded && c.vel.y < -5 && state === 'race') burst(c.pos, 8);
   c.pos.y = top; c.vel.y = 0; c.grounded = true; c.ground = g; c.gtype = type;
 }
 function collideBox(c, b, prevFeet) {
+  if (b.slope) {
+    if (Math.abs(c.pos.x - b.x) > b.hw + R * 0.5 || Math.abs(c.pos.z - b.z) > b.hd + R * 0.5) return;
+    const top = floorHeight(b, c.pos.z);
+    // Follow the hill while walking; airborne characters land only from above.
+    if (c.vel.y <= 0 && c.pos.y <= top && prevFeet >= top - 0.35) land(c, top, b, 'box');
+    return;
+  }
   const feet = c.pos.y;
   if (feet > b.top + 0.001 || feet + HEIGHT < b.top - b.h) return;
   const lx = c.pos.x - b.x, lz = c.pos.z - b.z;
@@ -1584,7 +1715,9 @@ function stepChar(c, h) {
 
   const ctrl = c.diving ? 0.04 : c.stun > 0 ? 0.12 : c.grounded ? 1 : 0.6;
   const acc = (c.grounded ? 55 : 22) * ctrl;
-  let dvx = inp.mx * c.speed - c.vel.x, dvz = inp.mz * c.speed - c.vel.z;
+  const grade = c.grounded && c.ground ? (c.ground.slope || c.ground.stairSlope || 0) * inp.mz : 0;
+  const terrainSpeed = c.speed * clamp(1 - grade * 1.2, 0.55, 1.5);
+  let dvx = inp.mx * terrainSpeed - c.vel.x, dvz = inp.mz * terrainSpeed - c.vel.z;
   const dl = Math.hypot(dvx, dvz), maxd = acc * h;
   if (dl > maxd) { dvx *= maxd / dl; dvz *= maxd / dl; }
   c.vel.x += dvx; c.vel.z += dvz;
@@ -1604,12 +1737,15 @@ function stepChar(c, h) {
       c.vel.x = fx * 11.5; c.vel.z = fz * 11.5;
       c.vel.y = c.grounded ? 5 : Math.max(c.vel.y, 3.5);
       c.grounded = false; c.ground = null; c.coyote = 0;
-      if (c.isPlayer) sfx.dive();
+      if (c.isPlayer) { sfx.dive(); burst(c.pos, 10); }
     }
   }
   c.vel.y = Math.max(c.vel.y - GRAV * h, -40);
-  const prevFeet = c.pos.y, vyBefore = c.vel.y, was = c.grounded;
+  const prevFeet = c.pos.y, vyBefore = c.vel.y, was = c.grounded, oldGround = c.ground;
   c.pos.addScaledVector(c.vel, h);
+  if (was && oldGround && oldGround.slope && c.vel.y <= 0 && Math.abs(c.pos.x - oldGround.x) <= oldGround.hw && Math.abs(c.pos.z - oldGround.z) <= oldGround.hd) {
+    c.pos.y = floorHeight(oldGround, c.pos.z);
+  }
   c.grounded = false; c.ground = null;
   for (const b of boxes) if (b.active) collideBox(c, b, prevFeet);
   for (const d of discs) collideDisc(c, d, prevFeet);
@@ -1622,7 +1758,7 @@ function hitChar(c, vx, vz, vy, stun) {
   if (c.hitCD > 0) return;
   c.vel.set(vx, vy, vz); c.stun = stun; c.hitCD = 0.4; c.spin = 1;
   c.grounded = false; c.ground = null; c.diving = false; c.coyote = 0;
-  if (c.isPlayer) sfx.hit();
+  if (c.isPlayer) { sfx.hit(); burst(c.pos, 12); shakeT = 0.35; }
 }
 function hazards(c) {
   const feet = c.pos.y;
@@ -1675,7 +1811,7 @@ function respawn(c) {
   c.pos.set((cp.x || 0) + rand(-cp.w, cp.w), (cp.y || 0) + 1.5, cp.z + rand(-1, 1));
   c.vel.set(0, 0, 0); c.stun = 0; c.diving = false; c.prone = 0; c.yaw = 0;
   c.grounded = false; c.ground = null; c.stuckT = 0; c.bestZ = c.pos.z; c.waitT = 0;
-  if (c.isPlayer) { sfx.fall(); toast('Tombo! De volta ao checkpoint'); snapCam = true; }
+  if (c.isPlayer) { if (state === 'race') soloFalls++; sfx.fall(); toast('Tombo! De volta ao checkpoint'); snapCam = true; }
 }
 
 // ---------- bots ----------
@@ -1704,7 +1840,7 @@ function botThink(c, dt) {
   if (!surfaceAt(tx, z - 2.4, y) && !surfaceAt(tx, z - 3.4, y)) {
     let best = null, bd = 1e9;
     for (const b of boxes) {
-      if ((!b.active && !b.blink) || b.move || b === g || b.top > y + 0.8 || b.top < y - 3) continue; // movers come to the bot
+      if ((!b.active && !b.blink) || b.move || b === g || floorHeight(b, z) > y + 0.8 || floorHeight(b, z) < y - 3) continue; // movers come to the bot
       const dz = z - (b.z + b.hd);
       if (dz < 0.5 || dz > 7) continue;
       const d = dz + Math.abs(b.x - x) * 0.3;
@@ -1726,7 +1862,7 @@ function botThink(c, dt) {
     if ((c.blockT += dt) > 0.6) { c.laneU = rand(-1, 1); c.blockT = 0; }
   } else c.blockT = 0;
   for (const b of boxes) {
-    if (b.active && Math.abs(x - b.x) <= b.hw && Math.abs(z - 0.9 - b.z) <= b.hd && b.top > y + 0.25 && b.top < y + 2) { inp.jump = true; break; }
+    if (b.active && !b.slope && Math.abs(x - b.x) <= b.hw && Math.abs(z - 0.9 - b.z) <= b.hd && b.top > y + 0.25 && b.top < y + 2) { inp.jump = true; break; }
   }
 
   // wait for pendulums
@@ -1794,6 +1930,8 @@ function botThink(c, dt) {
 const keys = {}, joy = { x: 0, y: 0 };
 let jumpQueued = false, diveQueued = false;
 window.addEventListener('keydown', e => {
+  if (e.code === 'Escape' && !e.repeat) { togglePause(); e.preventDefault(); return; }
+  if (paused) return;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) && state !== 'menu' && !(e.target && e.target.closest && e.target.closest('button'))) e.preventDefault();
   if (!e.repeat) {
     if (e.code === 'Space') jumpQueued = true;
@@ -1811,8 +1949,8 @@ const cv = renderer.domElement;
 cv.addEventListener('pointerdown', e => { ensureAudio(); camDrag = { id: e.pointerId, x: e.clientX, y: e.clientY }; try { cv.setPointerCapture(e.pointerId); } catch (_) {} });
 cv.addEventListener('pointermove', e => {
   if (!camDrag || camDrag.id !== e.pointerId) return;
-  camYaw -= (e.clientX - camDrag.x) * 0.006;
-  camPitch = clamp(camPitch + (e.clientY - camDrag.y) * 0.004, 0.12, 1.15);
+  camYaw -= (e.clientX - camDrag.x) * 0.006 * options.sensitivity / 100;
+  camPitch = clamp(camPitch + (e.clientY - camDrag.y) * 0.004 * options.sensitivity / 100, 0.12, 1.15);
   camDrag.x = e.clientX; camDrag.y = e.clientY;
 });
 const endDrag = e => { if (camDrag && camDrag.id === e.pointerId) camDrag = null; };
@@ -1862,7 +2000,7 @@ function playerThink(c) {
 let actx = null;
 function ensureAudio() {
   try {
-    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!actx) { actx = new (window.AudioContext || window.webkitAudioContext)(); masterGain = actx.createGain(); masterGain.connect(actx.destination); masterGain.gain.value = options.muted ? 0 : options.volume / 100; }
     if (actx.state === 'suspended') actx.resume();
   } catch (_) { actx = null; }
 }
@@ -1872,12 +2010,12 @@ function tone(f1, f2, dur, type, vol, delay) {
   const o = actx.createOscillator(), g = actx.createGain();
   o.type = type; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(f2, t + dur);
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + dur + 0.02);
+  o.connect(g); g.connect(masterGain); o.start(t); o.stop(t + dur + 0.02);
 }
 const sfx = {
   jump: () => tone(420, 820, 0.13, 'square', 0.035),
   dive: () => tone(300, 520, 0.14, 'triangle', 0.06),
-  hit: () => tone(240, 70, 0.28, 'sawtooth', 0.06),
+  hit: () => tone(rand(180, 280), rand(55, 95), 0.28, 'sawtooth', 0.06),
   boing: () => tone(180, 900, 0.3, 'sine', 0.09),
   crash: () => { tone(160, 60, 0.25, 'sawtooth', 0.07); tone(900, 300, 0.12, 'square', 0.03); },
   fall: () => tone(700, 90, 0.6, 'sine', 0.09),
@@ -1893,8 +2031,9 @@ let bigTimer = 0, toastTimer = 0;
 function big(text, ms) { const el = $('big'); el.textContent = text; el.style.transform = 'scale(1.25)'; requestAnimationFrame(() => { el.style.transform = 'scale(1)'; }); bigTimer = (ms || 900) / 1000; }
 function toast(text) { const el = $('toast'); el.textContent = text; el.classList.add('show'); toastTimer = 1.6; }
 const ord = n => n + 'º';
-function loadBest() { try { const v = parseFloat(localStorage.getItem('tombo-total-best-' + currentMap.id)); return isFinite(v) ? v : null; } catch (_) { return null; } }
-function saveBest(v) { try { localStorage.setItem('tombo-total-best-' + currentMap.id, String(v)); } catch (_) {} }
+function bestKey(M) { return 'tombo-total-best-' + M.id + (M.id === 'procedural' ? '-' + proceduralSeed : ''); }
+function loadBest() { try { const v = parseFloat(localStorage.getItem(bestKey(currentMap))); return isFinite(v) ? v : null; } catch (_) { return null; } }
+function saveBest(v) { try { localStorage.setItem(bestKey(currentMap), String(v)); } catch (_) {} }
 // everyone in this race: simulated chars, the host's bots mirrored here, and online players
 function racers() {
   const list = chars.concat(puppets);
@@ -1910,10 +2049,80 @@ function playerPlace() {
 function markFinished(c, t) {
   if (finishOrder.includes(c)) return;
   c.finished = true; c.finishTime = t; finishOrder.push(c);
+  if (c === player) burst(c.pos, 70, true);
   cheer(c === player ? 1 : 0.55);
   if (state !== 'race') return;
   if (c === player) endRace(finishOrder.length <= QUAL);
   else if (finishOrder.length >= QUAL && !player.finished) endRace(false);
+}
+
+
+// Personal best replay is visual only; it never enters racers() or collisions.
+let personalReplay = [], replaySamples = [], replayCursor = 0, soloFalls = 0;
+let replayMesh = null;
+const replayKey = () => bestKey(currentMap) + '-replay-v1';
+function resetPersonalReplay() {
+  personalReplay = []; replaySamples = []; replayCursor = 0; soloFalls = 0;
+  if (replayMesh) replayMesh.visible = false;
+  if (net.room) return;
+  try {
+    const data = JSON.parse(localStorage.getItem(replayKey()) || 'null');
+    if (data && data.time === loadBest() && Array.isArray(data.samples) && data.samples.length <= 4000 && data.samples.every((v, i, a) => Array.isArray(v) && v.length === 5 && v.every(Number.isFinite) && v[0] >= 0 && (!i || v[0] > a[i-1][0]))) personalReplay = data.samples;
+  } catch (_) {}
+  if (personalReplay.length && !replayMesh) {
+    replayMesh = makeBean('#9beaff', false).root;
+    replayMesh.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.32; o.material.depthWrite = false; o.castShadow = false; } });
+    scene.add(replayMesh);
+  }
+}
+function capturePersonalReplay(force = false) {
+  if (net.room || state !== 'race' || replaySamples.length >= 4000) return;
+  const last = replaySamples[replaySamples.length - 1];
+  if (last && (raceT <= last[0] || (!force && raceT - last[0] < 0.1))) return;
+  replaySamples.push([raceT, player.pos.x, player.pos.y, player.pos.z, player.yaw]);
+}
+function savePersonalReplay() {
+  if (net.room || replaySamples.length < 2) return;
+  try { localStorage.setItem(replayKey(), JSON.stringify({ time: player.finishTime, samples: replaySamples })); } catch (_) {}
+}
+function updatePersonalReplay() {
+  if (!replayMesh) return;
+  replayMesh.visible = !net.room && state === 'race' && personalReplay.length > 1 && raceT <= personalReplay[personalReplay.length - 1][0];
+  if (!replayMesh.visible) return;
+  while (replayCursor < personalReplay.length - 2 && personalReplay[replayCursor + 1][0] < raceT) replayCursor++;
+  const a = personalReplay[replayCursor], b = personalReplay[replayCursor + 1];
+  const t = clamp((raceT - a[0]) / (b[0] - a[0]), 0, 1);
+  // Teleports at checkpoints must not draw a flight across the course.
+  const jump = Math.hypot(b[1]-a[1], b[2]-a[2], b[3]-a[3]) > 6;
+  const k = jump ? (t < 1 ? 0 : 1) : t;
+  replayMesh.position.set(a[1]+(b[1]-a[1])*k, a[2]+(b[2]-a[2])*k, a[3]+(b[3]-a[3])*k);
+  replayMesh.rotation.y = a[4] + Math.atan2(Math.sin(b[4]-a[4]), Math.cos(b[4]-a[4])) * k;
+}
+let soloProgress = { finishes: 0, clean: false, maps: [] };
+try {
+  const d = JSON.parse(localStorage.getItem('tombo-total-solo-v1') || 'null');
+  if (d && Number.isSafeInteger(d.finishes) && d.finishes >= 0 && Array.isArray(d.maps)) soloProgress = { finishes: d.finishes, clean: d.clean === true, maps: d.maps.filter(id => typeof id === 'string') };
+} catch (_) {}
+function updateSoloChallenges() {
+  $('soloPrize').hidden = true;
+  $('soloChallenges').hidden = !!net.room;
+  if (net.room) return;
+  if (player.finished) {
+    soloProgress.finishes++;
+    soloProgress.clean ||= soloFalls === 0;
+    if (!soloProgress.maps.includes(currentMap.id)) soloProgress.maps.push(currentMap.id);
+    try { localStorage.setItem('tombo-total-solo-v1', JSON.stringify(soloProgress)); } catch (_) {}
+  }
+  const classics = MAPS.filter(m => m.id !== 'procedural');
+  const count = classics.filter(m => soloProgress.maps.includes(m.id)).length;
+  const earned = [soloProgress.finishes >= 3, soloProgress.clean, count === classics.length];
+  const prizes = [];
+  SECRETS.forEach((secret, i) => { if (earned[i] && !unlocked.includes(secret[1])) { unlocked.push(secret[1]); prizes.push(secret[2]); } });
+  if (prizes.length) {
+    try { localStorage.setItem('tombo-total-secrets', JSON.stringify(unlocked)); } catch (_) {}
+    refreshPickers(); $('soloPrize').hidden = false; $('soloPrize').textContent = 'Desbloqueou: ' + prizes.join(' · ');
+  }
+  $('soloChallenges').textContent = 'Desafios solo — Troféu: ' + Math.min(3, soloProgress.finishes) + '/3 chegadas · Manto: ' + (soloProgress.clean ? '✓ sem cair' : 'chegue sem cair') + ' · Olhos de estrela: ' + count + '/' + classics.length + ' mapas clássicos.';
 }
 
 // ---------- match settings ----------
@@ -1962,8 +2171,10 @@ function mountSettings(el, onChange) {
 let state = 'menu', cdT = 0, lastCount = 0, raceT = 0, worldT = 0, endT = 0, endOk = false;
 const finishOrder = [];
 function resetRace() {
+  clearBursts(); shakeT = 0;
+  resetPersonalReplay();
   finishOrder.length = 0; raceT = 0;
-  tiles.forEach(resetTile); shuffleDoors(net.room && net.cfg ? mulberry32(net.cfg.seed) : null);
+  tiles.forEach(resetTile); shuffleDoors(net.room && net.cfg ? mulberry32(net.cfg.seed) : currentMap.id === 'procedural' ? mulberry32(proceduralSeed) : null);
   for (const b of balls) scene.remove(b.mesh); balls.length = 0;
   // restart moving obstacles from the same phase, so online players see them in sync
   worldT = 0;
@@ -2001,6 +2212,7 @@ function startRace() {
 }
 let timeUp = false, lastWarn = 0;
 function endRace(ok, byTime) {
+  capturePersonalReplay(true);
   state = 'over'; endT = 1.8; endOk = ok; timeUp = !!byTime;
   big(ok ? 'CHEGOU!' : byTime ? 'TEMPO!' : 'FIM!', 1600);
   ok ? sfx.win() : sfx.lose();
@@ -2026,12 +2238,18 @@ function showResults() {
   $('rPos').textContent = player.finished ? ord(finishOrder.indexOf(player) + 1) + ' lugar' : 'Não chegou';
   $('rTime').textContent = player.finished ? fmt(player.finishTime) : '—';
   let best = loadBest();
-  if (player.finished && (best === null || player.finishTime < best)) { best = player.finishTime; saveBest(best); }
+  const previousBest = best;
+  const improved = player.finished && (best === null || player.finishTime < best);
+  if (improved) { best = player.finishTime; saveBest(best); savePersonalReplay(); }
+  $('rDelta').textContent = !player.finished ? 'Mais uma tentativa? O próximo checkpoint está esperando.' : previousBest === null ? 'Primeiro recorde! Tente superar seu fantasma.' : improved ? 'Novo recorde! Melhorou ' + fmt(previousBest - player.finishTime) + '.' : 'Faltaram ' + fmt(player.finishTime - previousBest) + ' para superar o recorde.';
+  updateSoloChallenges();
   $('rBest').textContent = 'Recorde ' + (best === null ? '—' : fmt(best));
   renderBoard();
   renderChamp();
   const online = !!net.room;
   for (const id of ['toMenu', 'again', 'nextMap']) $(id).hidden = online;
+  $('newTrack').hidden = online || currentMap.id !== 'procedural';
+  $('again').textContent = currentMap.id === 'procedural' ? 'Repetir esta pista' : 'Tentar de novo';
   $('backLobby').hidden = !online;
   $('results').hidden = false;
   (online ? $('backLobby') : $('again')).focus();
@@ -2055,6 +2273,7 @@ function renderBoard() {
 }
 $('play').addEventListener('click', startRace);
 $('again').addEventListener('click', startRace);
+$('newTrack').addEventListener('click', () => { generateTrack(Math.floor(Math.random() * 2147483646) + 1); startRace(); });
 
 // ---------- customization ----------
 const COLORS = [['#ff6aa8', 'Rosa'], ['#ffc93c', 'Amarelo'], ['#4db8ff', 'Azul'], ['#4fd67a', 'Verde'], ['#a77bff', 'Roxo'], ['#ff8a3d', 'Laranja'], ['#ff4d5e', 'Vermelho'], ['#f4eefa', 'Branco']];
@@ -2124,7 +2343,7 @@ function pickerButtons(el, items, key, cls) {
     if (cls === 'sw') b.style.background = value; else b.textContent = label;
     if (isLocked(value)) {
       b.disabled = true; b.textContent = '🔒 Secreto';
-      b.setAttribute('aria-label', 'Item secreto, bloqueado'); b.title = 'Vença um campeonato online para desbloquear';
+      b.setAttribute('aria-label', 'Item secreto, bloqueado'); b.title = 'Vença um campeonato online ou complete os desafios solo: 3 chegadas, uma chegada sem cair e todos os mapas clássicos.';
     } else if (SECRETS.some(s => s[1] === value)) b.textContent = '★ ' + label;
     b.setAttribute('aria-pressed', String(look[key] === value));
     b.addEventListener('click', () => {
@@ -2151,7 +2370,9 @@ $('closeCustom').addEventListener('click', () => { customizing = false; $('custo
 
 // ---------- map select ----------
 function updateCourseList() {
-  $('mapLabel').textContent = 'Mapa: ' + currentMap.name;
+  $('mapLabel').textContent = 'Mapa: ' + currentMap.name + (currentMap.id === 'procedural' ? ' · Semente ' + proceduralSeed : '');
+  $('procControls').hidden = currentMap.id !== 'procedural';
+  $('procSeed').value = proceduralSeed;
   const ol = $('courseList'); ol.innerHTML = '';
   currentMap.sections.slice(1, -1).forEach(([, n]) => { const li = document.createElement('li'); li.textContent = n; ol.appendChild(li); });
 }
@@ -2162,11 +2383,11 @@ function renderMapList() {
     b.type = 'button'; b.className = 'mapcard';
     b.setAttribute('aria-pressed', String(M === currentMap));
     const th = M.theme;
-    let best = null; try { const v = parseFloat(localStorage.getItem('tombo-total-best-' + M.id)); if (isFinite(v)) best = v; } catch (_) {}
+    let best = null; try { const v = parseFloat(localStorage.getItem(bestKey(M))); if (isFinite(v)) best = v; } catch (_) {}
     b.innerHTML = `<span class="sky" style="background:linear-gradient(${th.sky},${th.sky} 55%,${th.slime})">` +
       `<i style="left:14px;background:${th.start}"></i><i style="left:56px;background:${th.wall};bottom:18px"></i><i style="left:98px;background:${th.arch}"></i></span>` +
       `<b>${M.name}</b><small>${M.desc}</small>` +
-      `<span class="meta"><span class="${/Difícil|Insano/.test(M.tag) ? 'hard' : ''}">${M.tag}</span> ·${M.sections.length - 2} obstáculos · Limite ${M.limit / 60 | 0}:${String(M.limit % 60).padStart(2, '0')} · Recorde ${best === null ? '—' : fmt(best)}</span>`;
+      `<span class="meta"><span class="${/Difícil|Insano/.test(M.tag) ? 'hard' : ''}">${M.tag}</span> ·${M.id === 'procedural' ? 7 : M.sections.length - 2} obstáculos · Limite ${M.limit / 60 | 0}:${String(M.limit % 60).padStart(2, '0')} · Recorde ${best === null ? '—' : fmt(best)}</span>`;
     b.addEventListener('click', () => selectMap(M.id));
     list.appendChild(b);
   }
@@ -2179,6 +2400,13 @@ function selectMap(id) {
   updateCourseList(); renderMapList();
 }
 $('openMaps').addEventListener('click', () => { mapsOpen = true; renderMapList(); $('menu').hidden = true; $('maps').hidden = false; $('closeMaps').focus(); });
+function generateTrack(seed) {
+  proceduralSeed = Math.max(1, Math.min(2147483647, Math.floor(Number(seed) || 1)));
+  try { localStorage.setItem('tombo-total-seed', String(proceduralSeed)); } catch (_) {}
+  selectMap('procedural');
+}
+$('procRepeat').addEventListener('click', () => generateTrack($('procSeed').value));
+$('procNew').addEventListener('click', () => generateTrack(1 + Math.floor(Math.random() * 2147483646)));
 $('closeMaps').addEventListener('click', () => { mapsOpen = false; $('maps').hidden = true; $('menu').hidden = false; $('openMaps').focus(); });
 $('nextMap').addEventListener('click', () => {
   const next = MAPS[(MAPS.indexOf(currentMap) + 1) % MAPS.length];
@@ -2362,6 +2590,8 @@ function updateHud(dt) {
 }
 
 function update(dt) {
+  $('pauseButton').hidden = !!net.room || !['race','countdown'].includes(state);
+  if (paused) return;
   worldT += dt;
   updateWorld(dt, worldT);
   if (state === 'countdown') {
@@ -2383,15 +2613,47 @@ function update(dt) {
     for (const c of chars) hazards(c);
   }
   for (const c of chars) { postChar(c, dt); animate(c, dt); }
+  capturePersonalReplay();
+  updatePersonalReplay();
   updateNet(dt);
 
   sun.position.set(player.pos.x + 18, player.pos.y + 40, player.pos.z + 14);
   sun.target.position.copy(player.pos);
   updateCamera(dt);
+  updateBursts(dt);
+  if (options.shake && shakeT > 0) { shakeT = Math.max(0, shakeT - dt); camera.position.x += Math.sin(worldT * 95) * shakeT * 0.25; camera.position.y += Math.cos(worldT * 80) * shakeT * 0.15; }
   updateScenery(dt);
   // a bot right in front of the lens would hide the hero: hide it
   for (const c of chars) if (!c.isPlayer) c.mesh.visible = state === 'menu' || c.mesh.position.distanceTo(camera.position) > 2.6;
   updateHud(dt);
+}
+
+// Same-origin room transport for a standalone hosted game.
+function standaloneRooms() {
+  return { async join(name) {
+    async function request(data) {
+      const controller = new AbortController(), timer = setTimeout(()=>controller.abort(), 8000);
+      try { const response = await fetch('/api/room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({room:name,...data}),signal:controller.signal});
+        if(!response.ok) { const e=new Error('Sala indisponível');e.code=response.status===401?'expired':response.status===409?'invalid_argument':'network';throw e; }
+        return await response.json();
+      } finally {clearTimeout(timer);}
+    }
+    const identity=await request({action:'join'});
+    let list=[],pending={},up=false,closed=false,busy=false,listener=null,lost=null,timer=null,failures=0;
+    function status(value) { if(up!==value){up=value;if(listener)listener(value);} }
+    async function sync() {
+      if(closed || busy)return;
+      busy=true;const outgoing=pending;pending={};
+      try {
+        const data=await request({action:'sync',token:identity.token,presence:outgoing});
+        if(closed)return;
+        list=data.peers.map(p=>({...p,isMe:p.peer===identity.peer,sameTab:p.peer===identity.peer}));failures=0;status(true);
+      }catch(e){pending={...outgoing,...pending};status(false);if(e.code==='expired' || ++failures>=10){closed=true;clearInterval(timer);if(lost)lost(e);}}
+      finally{busy=false;}
+    }
+    const room={peers:()=>list,connected:()=>up,onConnection(fn,onLost){listener=fn;lost=onLost;fn(up);},presence(data){Object.assign(pending,data);return Promise.resolve();},async leave(){closed=true;clearInterval(timer);status(false);await request({action:'leave',token:identity.token});}};
+    await sync();timer=setInterval(sync,100);return room;
+  }};
 }
 
 // ---------- online (artifact `room` capability) ----------
@@ -2535,13 +2797,15 @@ function updateNet(dt) {
 }
 function beginOnline(cfg) {
   net.cfg = {
+    procSeed: Math.max(1, num(cfg.procSeed || cfg.seed) | 0),
     map: MAPS.some(m => m.id === cfg.map) ? cfg.map : 'parque',
     bots: clamp(num(cfg.bots) | 0, 0, MAX_BOTS),
     limit: cfg.limit === 'auto' ? 'auto' : clamp(num(cfg.limit), 0, 900),
     ep: num(cfg.ep), seed: num(cfg.seed) | 0, humans: clamp(num(cfg.humans) | 0, 1, 64),
     champ: num(cfg.champ), round: clamp(num(cfg.round) | 0, 0, 10), rounds: clamp(num(cfg.rounds) | 0, 0, 10)
   };
-  if (currentMap.id !== net.cfg.map) { buildMap(net.cfg.map); updateCourseList(); }
+  if (net.cfg.map === 'procedural') proceduralSeed = net.cfg.procSeed;
+  if (currentMap.id !== net.cfg.map || net.cfg.map === 'procedural') { buildMap(net.cfg.map); updateCourseList(); }
   startRace();
 }
 // Joining retries a few times with growing pauses; codes that will never succeed stop at once.
@@ -2727,7 +2991,7 @@ function startChampionship() {
 }
 function startChampRound() {
   const ch = net.champ;
-  const cfg = { map: ch.maps[ch.round - 1], bots: match.bots, limit: match.limit, ep: Date.now(), seed: Math.random() * 2147483647 | 0, humans: lobbyHumans(), champ: ch.id, round: ch.round, rounds: ch.rounds };
+  const cfg = { procSeed: proceduralSeed, map: ch.maps[ch.round - 1], bots: match.bots, limit: match.limit, ep: Date.now(), seed: Math.random() * 2147483647 | 0, humans: lobbyHumans(), champ: ch.id, round: ch.round, rounds: ch.rounds };
   net.lastHostEp = cfg.ep; net.roundWall = Date.now();
   net.room.presence({ cfg, champ: ch }).catch(() => {});
   beginOnline(cfg);
@@ -2852,7 +3116,7 @@ $('netStart').addEventListener('click', () => {
   if (ch && !champFinal(ch) && ch.decided >= ch.round) { ch.round++; startChampRound(); return; }
   if (net.mode === 'camp') { startChampionship(); return; }
   const humans = lobbyHumans();
-  const cfg = { map: currentMap.id, bots: match.bots, limit: match.limit, ep: Date.now(), seed: Math.random() * 2147483647 | 0, humans };
+  const cfg = { procSeed: proceduralSeed, map: currentMap.id, bots: match.bots, limit: match.limit, ep: Date.now(), seed: Math.random() * 2147483647 | 0, humans };
   net.lastHostEp = cfg.ep;
   net.room.presence({ cfg }).catch(() => {});
   beginOnline(cfg);
@@ -2864,6 +3128,9 @@ $('backLobby').addEventListener('click', () => {
 });
 (async () => {
   try { if (window.claude && typeof window.claude.use === 'function') net.ns = await window.claude.use('room'); } catch (_) { net.ns = null; }
+  if (!net.ns && /^https?:$/.test(location.protocol)) {
+    try { const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),3000);try {const response=await fetch('/api/health',{signal:controller.signal});if(response.ok && (await response.json()).ok)net.ns=standaloneRooms();}finally{clearTimeout(timer);} } catch (_) {}
+  }
   if (!$('online').hidden) showOnlineView();
 })();
 
@@ -2872,6 +3139,44 @@ const onMatchChange = () => { resetRace(); showcaseHero(); };
 $('openMatch').addEventListener('click', () => { mountSettings($('matchSettings'), onMatchChange); $('menu').hidden = true; $('match').hidden = false; });
 $('closeMatch').addEventListener('click', () => { $('match').hidden = true; $('menu').hidden = false; $('openMatch').focus(); });
 saveMatch();
+
+
+const bursts = [];
+const burstGeometry = new THREE.SphereGeometry(0.07, 5, 4);
+const burstMaterials = ['#ffd23f','#ff4f9a','#2fd9a9','#ffffff'].map(color => new THREE.MeshBasicMaterial({color}));
+function burst(pos, count, celebration = false) {
+  if (options.quality === 'low') count = Math.ceil(count / 2);
+  for (let i = 0; i < count && bursts.length < 120; i++) {
+    const mesh = new THREE.Mesh(burstGeometry, burstMaterials[i % burstMaterials.length]);
+    mesh.position.copy(pos); mesh.position.y += 0.5;
+    scene.add(mesh); bursts.push({mesh, vx:rand(-3,3), vy:rand(2,celebration ? 10 : 4), vz:rand(-3,3), life:celebration ? 2.5 : 0.6});
+  }
+}
+function clearBursts() { for (const p of bursts) scene.remove(p.mesh); bursts.length = 0; }
+function updateBursts(dt) {
+  for (let i=bursts.length-1;i>=0;i--) { const p=bursts[i]; p.life-=dt; if(p.life<=0){scene.remove(p.mesh);bursts.splice(i,1);continue;} p.vy-=9*dt; p.mesh.position.x+=p.vx*dt; p.mesh.position.y+=p.vy*dt; p.mesh.position.z+=p.vz*dt; p.mesh.scale.setScalar(Math.min(1,p.life*3)); }
+}
+function applyOptions() {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, options.quality === 'low' ? 1 : options.quality === 'medium' ? 1.5 : 2));
+  renderer.shadowMap.enabled = options.quality !== 'low';
+  scene.traverse(o => { if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true; });
+  if (masterGain) masterGain.gain.setTargetAtTime(options.muted ? 0 : options.volume / 100, actx.currentTime, 0.02);
+  try { localStorage.setItem('tombo-total-options', JSON.stringify(options)); } catch (_) {}
+}
+function clearInput() { for (const k in keys) keys[k]=false; joy.x=joy.y=0; jumpQueued=diveQueued=false; camDrag=null; $('stickKnob').style.transform=''; }
+function togglePause() {
+  if (net.room || !['race','countdown'].includes(state)) return;
+  paused = !paused; clearInput();
+  $('options').hidden = !paused; $('optionsTitle').textContent = paused ? 'Pausa' : 'Opções';
+  if(paused) $('closeOptions').focus();
+}
+$('pauseButton').addEventListener('click',togglePause);
+$('openOptions').addEventListener('click',()=>{ $('menu').hidden=true; $('options').hidden=false; $('optionsTitle').textContent='Opções'; $('closeOptions').focus(); });
+$('closeOptions').addEventListener('click',()=>{ if(paused) togglePause(); else { $('options').hidden=true; $('menu').hidden=false; $('openOptions').focus(); } });
+for(const id of ['volume','muted','sensitivity','quality','shake']) { const el=$(id); if(el.type==='checkbox')el.checked=options[id];else el.value=options[id]; el.addEventListener('input',()=>{ options[id]=el.type==='checkbox'?el.checked:el.type==='range'?Number(el.value):el.value;applyOptions(); }); }
+document.addEventListener('visibilitychange',()=>{ if(document.hidden && !paused) togglePause(); });
+window.addEventListener('blur',()=>{ if(!paused)togglePause(); });
+applyOptions();
 
 let savedMap = 'parque';
 try { savedMap = localStorage.getItem('tombo-total-map') || 'parque'; } catch (_) {}
